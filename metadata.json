@@ -1,0 +1,7 @@
+{
+  "name": "Laysea Entertain",
+  "description": "แพลตฟอร์มพรีเมียมบริการเช่าเพื่อนเที่ยว เพื่อนกินข้าว ควงออกงาน ฟีลแฟน พร้อมระบบความปลอดภัยและ AI ผู้จัดการอัจฉริยะ",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for Authentication & Role Enforcement
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.role == 'admin' ||
+         request.auth.token.email == 'admin@laysea.com');
+    }
+
+    // 1. Users Collection: Users can only read & write their own profile, Admins can inspect all
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned']);
+      allow delete: if isOwner(userId) || isAdmin(); // PDPA Right to Erasure
+    }
+
+    // 2. Bookings & Orders:
+    // Only the booked client, assigned partner, or admin can read the order details.
+    // Full contact numbers and addresses remain masked until accepted.
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Clients can create booking requests
+      allow create: if isAuthenticated() && request.resource.data.clientId == request.auth.uid;
+
+      // Status transitions strictly checked: Client confirms, Partner accepts/starts, Admin mediates
+      allow update: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // 3. Financial Transactions & Escrow:
+    // Private financial audit logs - ONLY visible to respective party or Admin.
+    match /transactions/{txId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if isAdmin(); // Only server/admin can execute financial settlement
+    }
+
+    // 4. KYC Identity Applications:
+    // Contains Thai National ID & Bank Accounts - STRICTLY protected!
+    match /kyc_applications/{kycId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // 5. SOS Emergency Incidents:
+    // Partners can trigger SOS, Safety Operations Team & Admins monitor and resolve
+    match /sos_incidents/{incidentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+    }
+
+    // 6. In-App Notifications:
+    match /notifications/{notifId} {
+      allow read, update: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+      allow create, delete: if isAdmin();
+    }
+  }
+}

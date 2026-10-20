@@ -1,0 +1,5 @@
+ชื่อแอป Laysea Entertain
+
+THAIBULKSMS_API_KEY  kN0uqsnsXY7-jIcWV8a4WVm4dMMhI9
+
+THAIBULKSMS_API_SECRET  BVXQrMncWcXg2HlwaC4dO_GumYa4Mt
