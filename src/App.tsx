@@ -68,10 +68,29 @@ export default function App() {
         const res = await fetch('https://laysea-entertain-backend-1.onrender.com/api/partners');
         if (res.ok) {
           const data = await res.json();
-          const list = data.partners || data.data;
-          if (Array.isArray(list) && list.length > 0) {
-            setPartners(list);
-            return;
+        // รองรับทั้งแบบ Array ตรงๆ และแบบ Object ที่มี key partners
+        const list = Array.isArray(data) ? data : (data.partners || data.data || []);
+        if (Array.isArray(list) && list.length > 0) {
+          // แปลงฟิลด์รูปภาพให้ตรงกับที่ UI เรียกใช้
+          const formattedList = list.map((p: any) => {
+            const rawGallery = p.gallery || p.galleryImages || [];
+            const photoList = Array.isArray(rawGallery) && rawGallery.length > 0 
+              ? rawGallery 
+              : (p.avatarUrl1 ? [p.avatarUrl1] : []);
+            
+            return {
+              ...p,
+              id: p.id || p._id || p.phone,
+              name: p.name || p.nickname || 'Laysea',
+              imageUrl: photoList[0] || p.avatarUrl1 || p.avatar || p.imageUrl,
+              avatarUrl: photoList[0] || p.avatarUrl1 || p.avatar || p.avatarUrl,
+              gallery: photoList,
+              galleryImages: photoList
+            };
+          });
+
+          setPartners(formattedList);
+          return;
           }
         }
       } catch (err) {
