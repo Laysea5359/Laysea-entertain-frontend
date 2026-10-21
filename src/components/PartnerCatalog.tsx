@@ -41,81 +41,77 @@ const [approvedPartners, setApprovedPartners] = useState<any[]>([]);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
 
 useEffect(() => {
-    // 1. ดึงพาร์ทเนอร์ตัวจริงจาก Firestore (ดึงทั้งจาก users ที่มี role='partner' และ collection partners)
-    const db = getFirestore(app);
+    let isMounted = true;
 
-    // ดึงจาก users
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const partnerUsers: any[] = [];
+    // ฟังก์ชันแปลงข้อมูลดิบให้เป็นการ์ดพาร์ทเนอร์
+    const mapAndSetPartners = (rawList: any[]) => {
+      const formatted = rawList.map((d: any) => {
+        const mainPhoto = d.avatar || d.imageUrl || (Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery[0] : '');
+        return {
+          id: d._id || d.id,
+          name: d.name || d.nickname || 'พาร์ทเนอร์ Laysea',
+          nickname: d.nickname || d.name || 'Laysea',
+          gender: d.gender || 'male',
+          age: d.age || 28,
+          height: d.height || 175,
+          location: d.location || 'ชลบุรี / บางแสน',
+          imageUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
+          avatarUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
+          galleryImages: Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery : (mainPhoto ? [mainPhoto] : []),
+          hourlyRate: d.price || d.hourlyRate || 1500,
+          bio: d.bio || 'พาร์ทเนอร์ยืนยันตัวตนเรียบร้อย (Verified Partner)',
+          skills: d.services || d.skills || ['ดูแลในวงสังสรรค์', 'เพื่อนเที่ยวคาเฟ่/ชิล'],
+          drinkingSkill: d.drinkingSkill || 'ดื่มเป็นเพื่อน',
+          isVerified: true,
+          rating: d.rating || 5.0,
+          reviewCount: d.reviewsCount || 0,
+          completedJobs: d.completedJobs || 0,
+          badges: ['100% Verified', 'KYC เช็ค']
+        };
+      });
+
+      if (isMounted && formatted.length > 0) {
+        setApprovedPartners(formatted);
+      }
+    };
+
+    // 1. ดึงข้อมูลสดจาก Firestore เป็นหลักก่อน
+    const db = getFirestore(app);
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const liveList: any[] = [];
       snapshot.docs.forEach((doc) => {
         const d = doc.data();
-        // ตรวจสอบว่าเป็นพาร์ทเนอร์จริง (role เป็น partner หรือมีฟิลด์ระบุตัวตนของพาร์ทเนอร์)
         if (d.role === 'partner' || d.userType === 'partner' || d.hourlyRate || d.price) {
-          const mainPhoto = d.avatar || d.imageUrl || (Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery[0] : '');
-          partnerUsers.push({
-            id: doc.id,
-            name: d.name || d.nickname || 'พาร์ทเนอร์ Laysea',
-            nickname: d.nickname || d.name || 'Laysea',
-            gender: d.gender || 'male',
-            age: d.age || 28,
-            height: d.height || 175,
-            location: d.location || 'ชลบุรี / บางแสน',
-            imageUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
-            avatarUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
-            galleryImages: Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery : (mainPhoto ? [mainPhoto] : []),
-            hourlyRate: d.price || d.hourlyRate || 1500,
-            bio: d.bio || 'พาร์ทเนอร์ยืนยันตัวตนเรียบร้อย (Verified Partner)',
-            skills: d.services || d.skills || ['ดูแลในวงสังสรรค์', 'เพื่อนเที่ยวคาเฟ่/ชิล'],
-            drinkingSkill: d.drinkingSkill || 'ดื่มเป็นเพื่อน',
-            isVerified: true,
-            rating: d.rating || 5.0,
-            reviewCount: d.reviewsCount || 0,
-            completedJobs: d.completedJobs || 0,
-            badges: ['100% Verified', 'KYC เช็ค']
-          });
+          liveList.push({ id: doc.id, ...d });
         }
       });
 
-      if (partnerUsers.length > 0) {
-        setApprovedPartners(partnerUsers);
+      if (liveList.length > 0) {
+        mapAndSetPartners(liveList);
       }
+    }, (err) => {
+      console.warn('Firestore live sync error:', err);
     });
 
-    // ดึงสำรองจาก partners เผื่อมีการแยก collection ไว้
-    const unsubPartners = onSnapshot(collection(db, 'partners'), (snapshot) => {
-      if (!snapshot.empty) {
-        const list = snapshot.docs.map((doc) => {
-          const d = doc.data();
-          const mainPhoto = d.avatar || d.imageUrl || (Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery[0] : '');
-          return {
-            id: doc.id,
-            name: d.name || d.nickname || 'พาร์ทเนอร์ Laysea',
-            nickname: d.nickname || d.name || 'Laysea',
-            gender: d.gender || 'male',
-            age: d.age || 28,
-            height: d.height || 175,
-            location: d.location || 'ชลบุรี / บางแสน',
-            imageUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
-            avatarUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
-            galleryImages: Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery : (mainPhoto ? [mainPhoto] : []),
-            hourlyRate: d.price || d.hourlyRate || 1500,
-            bio: d.bio || 'พาร์ทเนอร์ยืนยันตัวตนเรียบร้อย (Verified Partner)',
-            skills: d.services || d.skills || ['ดูแลในวงสังสรรค์', 'เพื่อนเที่ยวคาเฟ่/ชิล'],
-            drinkingSkill: d.drinkingSkill || 'ดื่มเป็นเพื่อน',
-            isVerified: true,
-            rating: d.rating || 5.0,
-            reviewCount: d.reviewsCount || 0,
-            completedJobs: d.completedJobs || 0,
-            badges: ['100% Verified', 'KYC เช็ค']
-          };
-        });
-        setApprovedPartners((prev: any[]) => (prev.length > 0 ? prev : list));
-      }
-    });
+    // 2. เรียกผ่าน Backend API ควบคู่
+    fetch('https://laysea-entertain-backend-1.onrender.com/api/partners')
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error('Backend route not ready');
+      })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data.partners || []);
+        if (list.length > 0) {
+          mapAndSetPartners(list);
+        }
+      })
+      .catch(() => {
+        // เงียบไว้ถ้าหลังบ้านยังไม่ได้เปิด route
+      });
 
     return () => {
-      unsubUsers();
-      unsubPartners();
+      isMounted = false;
+      unsub();
     };
   }, []);
 
