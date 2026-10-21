@@ -324,12 +324,34 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
               className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
             />
             {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer"
-              >
-                ✕
-              </button>
-            )}
-          </div>
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      {/* แถบเลือกรูปแบบงาน */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+          <span className="text-slate-400 font-medium mr-1 flex items-center gap-1 shrink-0">
+            <Filter className="w-3 h-3 text-rose-400" /> รูปแบบงาน:
+          </span>
+          {categories.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors text-xs cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-slate-100 text-slate-900 font-bold shadow-xs'
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      </div>
+   
+     
