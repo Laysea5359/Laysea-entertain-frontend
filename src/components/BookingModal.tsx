@@ -34,9 +34,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   if (!partner) return null;
 
-  const pricingBreakdown = calculateProgressiveBookingPrice(partner.hourlyRate, durationHours);
-  const totalCredits = pricingBreakdown.totalPrice;
-  const hasEnoughCredits = userCredits >= totalCredits;
+// ดึงราคาจริงของพาร์ทเนอร์ ถ้าไม่มีหรือเป็น 0 ให้ใช้ราคามาตรฐาน 850 เครดิต/ชม.
+const realHourlyRate = Number(partner.hourlyRate || (partner as any).price || (partner as any).rate || 1500);
+
+const pricingBreakdown = calculateProgressiveBookingPrice(realHourlyRate, durationHours);
+const totalCredits = pricingBreakdown.totalPrice;
+const hasEnoughCredits = userCredits >= totalCredits;
 
   const eventOptions = [
     'ดูแลในวงสังสรรค์ / ปาร์ตี้',
@@ -138,7 +141,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               {partner.name} ({partner.nickname})
             </div>
             <div className="text-xs text-rose-400">
-              อัตราค่าบริการ: {partner.hourlyRate.toLocaleString()} เครดิต/ชม.
+              อัตราค่าบริการ: {realHourlyRate.toLocaleString()} เครดิต/ชม.
             </div>
             <div className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
               <CheckCircle2 className="w-3 h-3" />
@@ -291,8 +294,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   ~{pricingBreakdown.effectiveHourlyRate.toLocaleString()} เครดิต/ชม.
                   {pricingBreakdown.discountPercent > 0 && (
                     <span className="text-slate-500 line-through text-[10.5px] ml-1.5">
-                      {partner.hourlyRate.toLocaleString()} ฿
-                    </span>
+                    {realHourlyRate.toLocaleString()} ฿
+                   </span>
                   )}
                 </span>
               </div>
