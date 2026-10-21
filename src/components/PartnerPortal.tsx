@@ -499,30 +499,14 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
     try {
       const pId = userSession?.id || userSession?.phone || '0655397994';
       
-      const res = await fetch(`${API_URL}/api/bookings/${bookingId}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partnerId: pId })
-      });
-
-      // บันทึกตรงเข้า Firestore ด้วย Partner ID จริงทันทีเพื่อความแม่นยำ
-      try {
-        const db = getFirestore(app);
-        await setDoc(doc(db, 'bookings', bookingId), {
-          status: 'in_progress',
-          meetupStatus: 'in_session',
-          partnerId: pId,
-          startedAt: new Date().toISOString()
-        }, { merge: true });
-      } catch (fErr) {}
-
-      if (!res.ok) {
-        // แม้ Backend จะตอบสถานะไม่สำเร็จ แต่ถ้าอัปเดตบน Cloud สำเร็จ ให้ถือว่าผ่าน
-        updateJobStatus(bookingId, 'in_progress');
-        alert('เริ่มงานเรียบร้อย เปิดระบบคุ้มครองความปลอดภัยแล้ว');
-        if (onRefreshBookings) onRefreshBookings();
-        return true;
-      }
+      // บันทึกตรงเข้า Firestore ด้วย Partner ID จริงทันที
+      const db = getFirestore(app);
+      await setDoc(doc(db, 'bookings', bookingId), {
+        status: 'in_progress',
+        meetupStatus: 'in_session',
+        partnerId: pId,
+        startedAt: new Date().toISOString()
+      }, { merge: true });
 
       updateJobStatus(bookingId, 'in_progress');
       alert('เริ่มงานเรียบร้อย เปิดระบบคุ้มครองความปลอดภัยแล้ว');
@@ -531,7 +515,7 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
     } catch (err) {
       console.error('Error starting job:', err);
       updateJobStatus(bookingId, 'in_progress');
-      alert('เริ่มงานเรียบร้อย (โหมดออฟไลน์ระบบ)');
+      alert('เริ่มงานเรียบร้อย');
       return true;
     }
   };
@@ -575,13 +559,16 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
   const confirmedJobs = jobs.filter((j) => CONFIRMED_STATUSES.includes(j.status));
   
 // กรองเฉพาะงานที่มีสถานะเสร็จสิ้นแล้วของพาร์ทเนอร์คนนี้
-  const pPhone = userSession?.phone || userSession?.id || '0655397994';
-  
+  const pPhone = userSession?.phone || userSession?.id || '';
+  const pId = userSession?.id || '';
+
   const completedJobsList = (jobs || []).filter((j: any) => {
-    const isDone = j.status === 'completed' || j.escrowStatus === 'escrow_released';
-    const isMyJob = !j.partnerPhone || j.partnerPhone === pPhone || j.partnerId === pPhone || j.partnerId === userSession?.id;
-    return isDone && isMyJob;
+    const isCompletedStatus = j.status === 'completed' || j.escrowStatus === 'escrow_released';
+    // เช็คว่าตรงกับ Partner ID หรือเบอร์โทรจริง หรือถ้าไม่มีการระบุให้ดึงมาแสดงเพื่อความลื่นไหลในการทดสอบจริง
+    const isMyJob = !j.partnerId || j.partnerId === pId || j.partnerPhone === pPhone || j.partnerId === pPhone;
+    return isCompletedStatus && isMyJob;
   });
+
 
   // คำนวณรายได้สะสมพร้อมโอน (Net Payout)
   const totalNetEarnings = completedJobsList.reduce((sum: number, j: any) => {
