@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Sparkles,
   Coins,
   Users,
   Calendar,
@@ -8,7 +7,6 @@ import {
   Bot,
   LogOut,
   Shield,
-  Video,
   AlertTriangle,
   Camera,
   User,
@@ -17,10 +15,7 @@ import {
   Lock,
   FileText,
   Phone,
-  CheckCircle2,
   X,
-  MapPin,
-  HeartHandshake,
 } from 'lucide-react';
 import { Partner, Booking, UserSession } from '../types';
 import { PartnerCatalog } from './PartnerCatalog';
@@ -34,6 +29,10 @@ import { LiveTrackingModal } from './LiveTrackingModal';
 import { AvatarUploadModal } from './AvatarUploadModal';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
+/* ------------------------------------------------------------------ */
+/* Types & constants                                                   */
+/* ------------------------------------------------------------------ */
+
 interface ClientPortalProps {
   userSession: UserSession;
   partners: Partner[];
@@ -45,10 +44,23 @@ interface ClientPortalProps {
   onConfirmBooking: (booking: Booking) => void;
   onTriggerSos: (threat: string) => void;
   onUpdateAvatar?: (url: string) => void;
+  onUpdateProfile?: (patch: { name: string; nickname: string }) => void;
   onDeleteAccount?: () => void;
   onRefreshBookings?: () => void;
   onDeleteBooking?: (id: string) => void;
 }
+
+type ClientTab = 'catalog' | 'ai-manager' | 'bookings' | 'wallet' | 'profile';
+
+const API_URL: string =
+  import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
+
+const DELETE_CONFIRM_WORD = 'ลบบัญชี';
+const FINISHED_BOOKING_STATUSES = ['completed', 'reviewed', 'cancelled'];
+
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
 
 export const ClientPortal: React.FC<ClientPortalProps> = ({
   userSession,
@@ -61,31 +73,36 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   onConfirmBooking,
   onTriggerSos,
   onUpdateAvatar,
+  onUpdateProfile,
   onDeleteAccount,
   onRefreshBookings,
   onDeleteBooking,
 }) => {
-
-  const [clientTab, setClientTab] = useState<'catalog' | 'ai-manager' | 'bookings' | 'wallet' | 'profile'>('catalog');
+  const [clientTab, setClientTab] = useState<ClientTab>('catalog');
   const [selectedVdoPartner, setSelectedVdoPartner] = useState<Partner | null>(null);
   const [selectedBookingPartner, setSelectedBookingPartner] = useState<Partner | null>(null);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [isSosOpen, setIsSosOpen] = useState(false);
-  const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
+  const [trackingBookingId, setTrackingBookingId] = useState<string | null>(null);
   const [isEditAvatarOpen, setIsEditAvatarOpen] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
-const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string | null>(null);
-  const handleDeleteAccountSubmit = () => {
-    if (onDeleteAccount) {
-      setShowDeleteConfirmModal(false);
-      onDeleteAccount();
-    }
-  };
-// State และฟังก์ชันสำหรับแก้ไขชื่อที่ใช้เรียก (Display Name)
+
+  // ชื่อที่ใช้เรียก (Display Name)
+  const [displayName, setDisplayName] = useState(userSession?.name || '');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameVal, setEditNameVal] = useState(userSession?.name || '');
+  const [isSavingName, setIsSavingName] = useState(false);
+
+  // ติดตามการจองจาก id เพื่อให้สถานะอัปเดตตาม bookings ล่าสุดเสมอ
+  const trackingBooking = trackingBookingId
+    ? bookings.find((b) => b.id === trackingBookingId) || null
+    : null;
+
+  const activeBookingCount = bookings.filter(
+    (b) => !FINISHED_BOOKING_STATUSES.includes(String(b.status))
+  ).length;
 
   const handleSaveDisplayName = async () => {
     const newName = editNameVal.trim();
@@ -93,34 +110,61 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
       alert('กรุณาระบุชื่อที่ใช้เรียก');
       return;
     }
+    if (!userSession?.phone) {
+      alert('ไม่พบเบอร์โทรศัพท์ของบัญชี กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+      return;
+    }
 
+    setIsSavingName(true);
     try {
-      // 1. ส่งข้อมูลไปอัปเดตที่ Backend Render
-      await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
+      const res = await fetch(`${API_URL}/api/users/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: userSession?.phone || '0906326569',
-          name: newName,
-          nickname: newName
-        })
+        body: JSON.stringify({ phone: userSession.phone, name: newName, nickname: newName }),
       });
+      if (!res.ok) throw new Error(`Backend responded ${res.status}`);
 
-      // 2. อัปเดตข้อมูล Session ใน LocalStorage
-      if (userSession) {
-        userSession.name = newName;
-        userSession.nickname = newName;
-        const updatedSession = { ...userSession, name: newName, nickname: newName };
-        localStorage.setItem('laysea_user_session', JSON.stringify(updatedSession));
+      // อัปเดตหน้าจอทันที โดยไม่แก้ props ตรงๆ
+      setDisplayName(newName);
+      onUpdateProfile?.({ name: newName, nickname: newName });
+      try {
+        localStorage.setItem(
+          'laysea_user_session',
+          JSON.stringify({ ...userSession, name: newName, nickname: newName })
+        );
+      } catch (lsErr) {
+        console.warn('localStorage save error:', lsErr);
       }
 
-      alert('บันทึกชื่อสำเร็จเรียบร้อยแล้ว!');
       setIsEditingName(false);
-    } catch (err: any) {
+      alert('บันทึกชื่อสำเร็จเรียบร้อยแล้ว!');
+    } catch (err) {
       console.error('Error saving name:', err);
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+      alert('บันทึกชื่อไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง');
+    } finally {
+      setIsSavingName(false);
     }
   };
+
+  const closeDeleteModal = () => {
+    setShowDeleteConfirmModal(false);
+    setDeleteConfirmationText('');
+  };
+
+  const handleDeleteAccountSubmit = () => {
+    if (deleteConfirmationText.trim() !== DELETE_CONFIRM_WORD) return;
+    if (!onDeleteAccount) {
+      alert('ไม่สามารถลบบัญชีได้ในขณะนี้ กรุณาติดต่อเจ้าหน้าที่');
+      return;
+    }
+    closeDeleteModal();
+    onDeleteAccount();
+  };
+
+  const navButtonClass = (tab: ClientTab) =>
+    `flex flex-col items-center gap-1 py-1 transition-colors cursor-pointer ${
+      clientTab === tab ? 'text-rose-400 font-bold' : 'hover:text-white'
+    }`;
 
   return (
     <div className="flex-1 flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
@@ -148,30 +192,30 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-white text-xs truncate max-w-[120px]">
-                {userSession.name}
+                {displayName}
               </span>
-              <span className="text-[9px] bg-rose-500/10 text-rose-300 border border-rose-500/20 px-1 py-0.2 rounded font-medium">
+              <span className="text-[9px] bg-rose-500/10 text-rose-300 border border-rose-500/20 px-1 py-0.5 rounded font-medium">
                 ลูกค้า
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">
-              Laysea Entertain Premium
-            </p>
+            <p className="text-[10px] text-slate-400">Laysea Entertain</p>
           </div>
         </div>
 
         {/* Right side: Wallet + Logout */}
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => setIsWalletOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/15 border border-amber-500/30 rounded-lg text-xs text-amber-200"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/15 border border-amber-500/30 rounded-lg text-xs text-amber-200 cursor-pointer"
           >
-            <Coins className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <Coins className="w-3.5 h-3.5 text-amber-400" />
             <span className="font-bold text-white">{userCredits.toLocaleString()}</span>
             <span className="text-[10px] text-amber-400 font-semibold">+</span>
           </button>
 
           <button
+            type="button"
             onClick={onLogout}
             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
             title="ออกจากระบบ"
@@ -187,6 +231,7 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
           <Shield className="w-3 h-3 text-rose-400" /> งดบริการทางเพศ 100% · VDO Call ตรงปก
         </span>
         <button
+          type="button"
           onClick={() => setIsSosOpen(true)}
           className="text-red-400 hover:text-red-300 font-bold cursor-pointer"
         >
@@ -217,7 +262,9 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
             </div>
             <AiManagerChat
               onOpenVdoCallModal={() => {
-                if (partners.length > 0) setSelectedVdoPartner(partners[0]);
+                // เดิมเปิด VDO Call กับพาร์ทเนอร์คนแรกในลิสต์แบบสุ่ม ตอนนี้ให้ผู้ใช้เลือกเอง
+                setClientTab('catalog');
+                alert('เลือกพาร์ทเนอร์ที่ต้องการ แล้วกดปุ่ม VDO Call ที่การ์ดของพาร์ทเนอร์');
               }}
               onBrowsePartners={() => setClientTab('catalog')}
               onOpenSosModal={() => setIsSosOpen(true)}
@@ -226,15 +273,15 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
         )}
 
         {clientTab === 'bookings' && (
-            <BookingsList
-              bookings={bookings}
-              onOpenSos={() => setIsSosOpen(true)}
-              onBrowsePartners={() => setClientTab('catalog')}
-              onOpenLiveTracking={(b) => setTrackingBooking(b)}
-              onRefreshBookings={onRefreshBookings}
-              onDeleteBooking={onDeleteBooking}
-            />
-          )}
+          <BookingsList
+            bookings={bookings}
+            onOpenSos={() => setIsSosOpen(true)}
+            onBrowsePartners={() => setClientTab('catalog')}
+            onOpenLiveTracking={(b) => setTrackingBookingId(b.id)}
+            onRefreshBookings={onRefreshBookings}
+            onDeleteBooking={onDeleteBooking}
+          />
+        )}
 
         {clientTab === 'wallet' && (
           <div className="space-y-4">
@@ -243,10 +290,9 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
               <div className="text-3xl font-black text-amber-300 font-['Plus_Jakarta_Sans']">
                 {userCredits.toLocaleString()}
               </div>
-              <p className="text-[11px] text-slate-400">
-                1 เครดิต = 1 บาท (ไม่มีวันหมดอายุ)
-              </p>
+              <p className="text-[11px] text-slate-400">1 เครดิต = 1 บาท (ไม่มีวันหมดอายุ)</p>
               <button
+                type="button"
                 onClick={() => setIsWalletOpen(true)}
                 className="mt-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-900/30 cursor-pointer"
               >
@@ -257,7 +303,7 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
             <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-2 text-xs">
               <h3 className="font-bold text-white">สิทธิพิเศษของการใช้เครดิต:</h3>
               <ul className="text-slate-400 space-y-1 text-[11px] list-disc list-inside">
-                <li>ใช้ VDO Call ดูตัวจริงเพียง 150 เครดิต (ยืนยันตรงปก)</li>
+                <li>ใช้เครดิตสำหรับ VDO Call ดูตัวจริง (ยืนยันตรงปก)</li>
                 <li>ชำระเงินปลอดภัย มีประกันอุบัติเหตุคุ้มครองทุกการนัดหมาย</li>
                 <li>ขอคืนเครดิตได้หากพาร์ทเนอร์ไม่มาตามเวลานัดหมาย</li>
               </ul>
@@ -276,7 +322,11 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                   className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-rose-500/60 bg-slate-800 flex items-center justify-center cursor-pointer group shrink-0"
                 >
                   {userSession.avatarUrl ? (
-                    <img src={userSession.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    <img
+                      src={userSession.avatarUrl}
+                      alt="Avatar"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <User className="w-8 h-8 text-slate-500" />
                   )}
@@ -286,26 +336,29 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                 </div>
 
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
                   {isEditingName ? (
                     <div className="flex items-center gap-1.5 w-full">
                       <input
                         type="text"
                         value={editNameVal}
                         onChange={(e) => setEditNameVal(e.target.value)}
-                        className="px-2 py-0.5 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-rose-500"
+                        maxLength={50}
+                        className="px-2 py-0.5 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-rose-500 w-32"
                         placeholder="ระบุชื่อที่ต้องการ..."
+                        autoFocus
                       />
                       <button
                         type="button"
                         onClick={handleSaveDisplayName}
-                        className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold cursor-pointer"
+                        disabled={isSavingName}
+                        className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white rounded-lg text-[10px] font-bold cursor-pointer"
                       >
-                        บันทึก
+                        {isSavingName ? 'กำลังบันทึก...' : 'บันทึก'}
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsEditingName(false)}
+                        disabled={isSavingName}
                         className="px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded-lg text-[10px] cursor-pointer"
                       >
                         ยกเลิก
@@ -313,11 +366,11 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5">
-                      <h3 className="text-sm font-bold text-white">{userSession?.name || 'ลูกค้า Laysea'}</h3>
+                      <h3 className="text-sm font-bold text-white">{displayName || 'ลูกค้า Laysea'}</h3>
                       <button
                         type="button"
                         onClick={() => {
-                          setEditNameVal(userSession?.name || '');
+                          setEditNameVal(displayName);
                           setIsEditingName(true);
                         }}
                         className="text-slate-400 hover:text-amber-400 text-xs p-0.5 cursor-pointer"
@@ -325,14 +378,10 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                       >
                         ✏️
                       </button>
-                      <span className="text-[10px] bg-rose-500/10 text-rose-300 border border-rose-500/20 px-1.5 py-0.5 rounded-full font-medium">
-                      สมาชิกพรีเมียม
-                    </span>
-                  </div>
-                )}
-              </div>
+                    </div>
+                  )}
 
-              <div className="flex items-center gap-1 text-[11px] text-emerald-400 mt-1">
+                  <div className="flex items-center gap-1 text-[11px] text-emerald-400 mt-1">
                     <Phone className="w-3 h-3" />
                     <span>{userSession.phone}</span>
                     <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1 rounded ml-1">
@@ -340,6 +389,7 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setIsEditAvatarOpen(true)}
                     className="mt-1.5 text-[11px] text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 cursor-pointer"
                   >
@@ -353,12 +403,15 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
             <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-3">
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 text-rose-400" />
-                <h3 className="text-xs font-bold text-white">ความเป็นส่วนตัวและข้อมูลส่วนบุคคล (PDPA)</h3>
+                <h3 className="text-xs font-bold text-white">
+                  ความเป็นส่วนตัวและข้อมูลส่วนบุคคล (PDPA)
+                </h3>
               </div>
 
               <div className="text-[11px] text-slate-400 space-y-2">
                 <p>
-                  ข้อมูลของคุณได้รับการคุ้มครองตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA) มีการเข้ารหัสและใช้เพื่อความปลอดภัยในการนัดหมายเท่านั้น
+                  ข้อมูลของคุณได้รับการคุ้มครองตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA)
+                  มีการเข้ารหัสและใช้เพื่อความปลอดภัยในการนัดหมายเท่านั้น
                 </p>
                 <button
                   type="button"
@@ -384,11 +437,12 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                 พาร์ทเนอร์ทุกคนผ่านการตรวจสอบประวัติอาชญากรรมและมีประกันอุบัติเหตุคุ้มครองทุกภารกิจ
               </p>
               <button
+                type="button"
                 onClick={() => setIsSosOpen(true)}
                 className="w-full py-2 bg-red-950/40 hover:bg-red-900/40 border border-red-500/40 rounded-xl text-xs text-red-300 font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                <span>จำลองการแจ้งเหตุฉุกเฉิน / SOS Protocol</span>
+                <span>แจ้งเหตุฉุกเฉิน SOS</span>
               </button>
             </div>
 
@@ -399,7 +453,8 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                 <h3 className="text-xs font-bold text-red-300">โซนจัดการบัญชี (Danger Zone)</h3>
               </div>
               <p className="text-[10.5px] text-slate-400 leading-snug">
-                หากคุณต้องการยกเลิกการใช้งาน คุณสามารถขอลบบัญชีและทำลายข้อมูลผู้ใช้ทั้งหมด (ชื่อ, เบอร์โทร, พิกัด GPS, ประวัติการใช้งาน) ออกจากระบบอย่างถาวรตามกฎหมาย PDPA
+                หากคุณต้องการยกเลิกการใช้งาน คุณสามารถขอลบบัญชีและทำลายข้อมูลผู้ใช้ทั้งหมด (ชื่อ, เบอร์โทร,
+                พิกัด GPS, ประวัติการใช้งาน) ออกจากระบบอย่างถาวรตามกฎหมาย PDPA
               </p>
               <button
                 type="button"
@@ -412,55 +467,31 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
             </div>
           </div>
         )}
+      </div>
 
-      {/* Bottom Mobile Navigation Bar for Client */}
+      {/* Bottom Mobile Navigation Bar for Client (อยู่นอกพื้นที่เลื่อน จึงติดขอบล่างเสมอ) */}
       <div className="grid grid-cols-5 p-2 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 text-[10px] text-slate-400 shrink-0">
-        <button
-          onClick={() => setClientTab('catalog')}
-          className={`flex flex-col items-center gap-1 py-1 transition-colors cursor-pointer ${
-            clientTab === 'catalog' ? 'text-rose-400 font-bold' : 'hover:text-white'
-          }`}
-        >
+        <button type="button" onClick={() => setClientTab('catalog')} className={navButtonClass('catalog')}>
           <Users className="w-4 h-4" />
           <span>พาร์ทเนอร์</span>
         </button>
 
-        <button
-          onClick={() => setClientTab('ai-manager')}
-          className={`flex flex-col items-center gap-1 py-1 transition-colors cursor-pointer ${
-            clientTab === 'ai-manager' ? 'text-rose-400 font-bold' : 'hover:text-white'
-          }`}
-        >
+        <button type="button" onClick={() => setClientTab('ai-manager')} className={navButtonClass('ai-manager')}>
           <Bot className="w-4 h-4" />
           <span>AI ผู้จัดการ</span>
         </button>
 
-        <button
-          onClick={() => setClientTab('bookings')}
-          className={`flex flex-col items-center gap-1 py-1 transition-colors cursor-pointer ${
-            clientTab === 'bookings' ? 'text-rose-400 font-bold' : 'hover:text-white'
-          }`}
-        >
+        <button type="button" onClick={() => setClientTab('bookings')} className={navButtonClass('bookings')}>
           <Calendar className="w-4 h-4" />
-          <span>นัดหมาย ({bookings.length})</span>
+          <span>นัดหมาย{activeBookingCount > 0 ? ` (${activeBookingCount})` : ''}</span>
         </button>
 
-        <button
-          onClick={() => setClientTab('wallet')}
-          className={`flex flex-col items-center gap-1 py-1 transition-colors cursor-pointer ${
-            clientTab === 'wallet' ? 'text-rose-400 font-bold' : 'hover:text-white'
-          }`}
-        >
+        <button type="button" onClick={() => setClientTab('wallet')} className={navButtonClass('wallet')}>
           <Wallet className="w-4 h-4" />
           <span>กระเป๋าเงิน</span>
         </button>
 
-        <button
-          onClick={() => setClientTab('profile')}
-          className={`flex flex-col items-center gap-1 py-1 transition-colors cursor-pointer ${
-            clientTab === 'profile' ? 'text-rose-400 font-bold' : 'hover:text-white'
-          }`}
-        >
+        <button type="button" onClick={() => setClientTab('profile')} className={navButtonClass('profile')}>
           <Settings className="w-4 h-4" />
           <span>โปรไฟล์</span>
         </button>
@@ -512,9 +543,9 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
         <LiveTrackingModal
           booking={trackingBooking}
           currentUserRole="client"
-          onClose={() => setTrackingBooking(null)}
+          onClose={() => setTrackingBookingId(null)}
           onOpenSos={() => {
-            setTrackingBooking(null);
+            setTrackingBookingId(null);
             setIsSosOpen(true);
           }}
         />
@@ -526,14 +557,13 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
           userRole="client"
           onClose={() => setIsEditAvatarOpen(false)}
           onSaveAvatar={(url) => {
-            if (onUpdateAvatar) onUpdateAvatar(url);
+            onUpdateAvatar?.(url);
+            setIsEditAvatarOpen(false);
           }}
         />
       )}
 
-      {showPrivacyModal && (
-        <PrivacyPolicyModal onClose={() => setShowPrivacyModal(false)} />
-      )}
+      {showPrivacyModal && <PrivacyPolicyModal onClose={() => setShowPrivacyModal(false)} />}
 
       {/* Delete Account Confirmation Modal */}
       {showDeleteConfirmModal && (
@@ -545,8 +575,9 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
                 <h3 className="font-bold text-sm text-white">ยืนยันการลบบัญชีและข้อมูลผู้ใช้</h3>
               </div>
               <button
-                onClick={() => setShowDeleteConfirmModal(false)}
-                className="text-slate-400 hover:text-white p-1"
+                type="button"
+                onClick={closeDeleteModal}
+                className="text-slate-400 hover:text-white p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -555,14 +586,28 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
             <div className="p-3 bg-red-950/30 border border-red-500/20 rounded-xl text-[11px] text-red-200 space-y-1">
               <p className="font-bold">⚠️ การดำเนินการนี้ไม่สามารถยกเลิกได้!</p>
               <p className="text-slate-300">
-                ระบบจะลบข้อมูลชื่อ-นามสกุล, เบอร์โทรศัพท์, ประวัติการจอง, พิกัด GPS, และยอดเครดิตทั้งหมดออกจากฐานข้อมูลอย่างถาวรตามสิทธิ PDPA (Right to Erasure)
+                ระบบจะลบข้อมูลชื่อ-นามสกุล, เบอร์โทรศัพท์, ประวัติการจอง, พิกัด GPS, และยอดเครดิตทั้งหมดออกจากฐานข้อมูลอย่างถาวรตามสิทธิ
+                PDPA (Right to Erasure)
               </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-slate-300 mb-1">
+                พิมพ์ <strong className="text-red-300">{DELETE_CONFIRM_WORD}</strong> เพื่อยืนยัน:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmationText}
+                onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-red-500"
+                placeholder={DELETE_CONFIRM_WORD}
+              />
             </div>
 
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowDeleteConfirmModal(false)}
+                onClick={closeDeleteModal}
                 className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 ยกเลิก
@@ -570,7 +615,8 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
               <button
                 type="button"
                 onClick={handleDeleteAccountSubmit}
-                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-red-950/50 cursor-pointer"
+                disabled={deleteConfirmationText.trim() !== DELETE_CONFIRM_WORD}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-red-950/50 cursor-pointer"
               >
                 ยืนยันลบบัญชีถาวร
               </button>
@@ -579,6 +625,5 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
         </div>
       )}
     </div>
-  </div>
-);
+  );
 };
