@@ -390,13 +390,23 @@ const combinedPartners = approvedPartners;
               if (partner.imageUrl) return partner.imageUrl;
               if ((partner as any).selfieUrl) return (partner as any).selfieUrl;
 
-              // 3. Fallback localStorage
+              // 3. Fallback localStorage (ดึงรูปที่พาร์ทเนอร์เพิ่งอัปโหลดล่าสุด)
               try {
-                const raw = localStorage.getItem(`gallery_${partner.phone}`) || localStorage.getItem(`gallery_${partner.id}`);
+                const raw = 
+                  localStorage.getItem(`gallery_${partner.phone}`) || 
+                  localStorage.getItem(`gallery_${partner.id}`) || 
+                  localStorage.getItem('laysea_partner_gallery') ||
+                  localStorage.getItem('gallery_0655397994');
                 if (raw) {
                   const list = JSON.parse(raw);
-                  if (Array.isArray(list) && list[0]) return list[0];
+                  if (Array.isArray(list) && list.length > 0 && list[0]) return list[0];
                 }
+              } catch (e) {}
+
+              // 4. ดึงรูปโปรไฟล์ที่พาร์ทเนอร์เพิ่งเปลี่ยน
+              try {
+                const savedAvatar = localStorage.getItem('partner_avatar_url') || localStorage.getItem('laysea_partner_avatar');
+                if (savedAvatar) return savedAvatar;
               } catch (e) {}
 
               return 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80';
@@ -408,6 +418,7 @@ const combinedPartners = approvedPartners;
               e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80';
             }}
           />
+
           <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
             <span className="bg-slate-950/80 text-white text-[11px] px-2.5 py-1 rounded-full border border-slate-700 backdrop-blur-sm">
               🔍 แตะดูรูปเต็ม
