@@ -89,53 +89,35 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
 
   const handleSaveDisplayName = async () => {
     const newName = editNameVal.trim();
-    if (!newName) return alert('กรุณาระบุชื่อที่ใช้เรียก');
+    if (!newName) {
+      alert('กรุณาระบุชื่อที่ใช้เรียก');
+      return;
+    }
 
     try {
+      // 1. ส่งข้อมูลไปอัปเดตที่ Backend Render (จะบันทึกลง MongoDB Atlas และ Firestore ให้ทันที)
+      const res = await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: userSession?.phone || '0906326569',
+          name: newName,
+          nickname: newName
+        })
+      });
+
+      // 2. อัปเดตข้อมูล Session ใน LocalStorage
       if (userSession) {
         const updatedSession = { ...userSession, name: newName, nickname: newName };
         localStorage.setItem('laysea_user_session', JSON.stringify(updatedSession));
-        
-        // 1. อัปเดตลง Firestore ทันที
-        try {
-          const { getFirestore, doc, setDoc } = await import('firebase/firestore');
-          const { app } = await import('../firebase');
-          const db = getFirestore(app);
-          const userId = userSession.id || userSession.phone || userSession.uid;
-          if (userId) {
-            await setDoc(doc(db, 'users', String(userId)), { name: newName, nickname: newName }, { merge: true });
-          }
-        } catch (fErr) {
-          console.warn('Firestore update error:', fErr);
-        }
-
-        // 2. ยิงอัปเดตไปหลังบ้าน Render (MongoDB Atlas) ควบคู่
-        try {
-          await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              phone: userSession.phone,
-              name: newName,
-              nickname: newName
-            })
-          });
-        } catch (bErr) {
-          console.warn('Backend update error:', bErr);
-        }
-
-        // 3. อัปเดต State หน้าจอทันที
-        if (typeof (userSession as any).setName === 'function') {
-          (userSession as any).setName(newName);
-        }
       }
 
-      setIsEditingName(false);
       alert('บันทึกชื่อสำเร็จเรียบร้อยแล้ว!');
+      setIsEditingName(false);
       window.location.reload();
     } catch (err: any) {
       console.error('Error saving name:', err);
-      alert('เกิดข้อผิดพลาดในการบันทึกชื่อ');
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
     }
   };
 
