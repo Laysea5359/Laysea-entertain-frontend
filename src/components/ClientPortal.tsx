@@ -108,16 +108,14 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
 
       // 2. อัปเดตข้อมูล Session ใน LocalStorage
       if (userSession) {
+        userSession.name = newName;
+        userSession.nickname = newName;
         const updatedSession = { ...userSession, name: newName, nickname: newName };
         localStorage.setItem('laysea_user_session', JSON.stringify(updatedSession));
       }
 
       alert('บันทึกชื่อสำเร็จเรียบร้อยแล้ว!');
       setIsEditingName(false);
-      window.location.reload();
-    } catch (err: any) {
-      console.error('Error saving name:', err);
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
     }
   };
 
