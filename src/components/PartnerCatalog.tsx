@@ -646,15 +646,13 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
                         <span>VDO Call</span>
                       </button>
                       <button
-                        type="button"
-                        onClick={() => onSelectBook(p)}
-                        disabled={!hasRate}
-                        title={hasRate ? undefined : 'พาร์ทเนอร์ยังไม่ได้ระบุราคา'}
-                        className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Calendar className="w-3.5 h-3.5" />
-                        <span>จองเลย</span>
-                      </button>
+                type="button"
+                  onClick={() => onSelectBook(p)}
+                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-rose-900/20 transition-all active:scale-95"
+>
+               <Calendar className="w-3.5 h-3.5" />
+               <span>จองเลย</span>
+                </button>
                     </div>
                   </div>
                 </div>
