@@ -499,7 +499,7 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
     try {
       const pId = userSession?.id || userSession?.phone || '0655397994';
       
-      // บันทึกตรงเข้า Firestore ด้วย Partner ID จริงทันที
+      // บันทึกตรงเข้า Cloud Firestore ทันทีเพื่อให้สถานะเปลี่ยนและเปิดระบบคุ้มครอง
       const db = getFirestore(app);
       await setDoc(doc(db, 'bookings', bookingId), {
         status: 'in_progress',
@@ -509,7 +509,7 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
       }, { merge: true });
 
       updateJobStatus(bookingId, 'in_progress');
-      alert('เริ่มงานเรียบร้อย เปิดระบบคุ้มครองความปลอดภัยแล้ว');
+      alert('เริ่มปฏิบัติงานเรียบร้อย เปิดระบบคุ้มครองความปลอดภัยแล้ว');
       if (onRefreshBookings) onRefreshBookings();
       return true;
     } catch (err) {
@@ -898,9 +898,10 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
                         <button
                           type="button"
                           onClick={async () => {
-                            const started = await handleStartProgress(job.id);
-                            if (started) openTracking({ ...job, status: 'in_progress' });
-                          }}
+                           const jobId = job.id || job.bookingId;
+                           const started = await handleStartProgress(jobId);
+                           if (started) openTracking({ ...job, id: jobId, status: 'in_progress' });
+                        }}
                           className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
