@@ -10,9 +10,8 @@ import {
   Check,
   Wine,
   Award,
-  HeartHandshake,
 } from 'lucide-react';
-import { Partner, Gender, LgbtqSubtype } from '../types';
+import { Partner, LgbtqSubtype } from '../types';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 import { app } from '../firebase';
 
@@ -33,31 +32,37 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
   const [selectedLgbtqSubtype, setSelectedLgbtqSubtype] = useState<'all' | LgbtqSubtype>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-const [activePhotoMap, setActivePhotoMap] = useState<Record<string, string>>({});
-const [approvedPartners, setApprovedPartners] = useState<any[]>([]);
+  const [activePhotoMap, setActivePhotoMap] = useState<Record<string, string>>({});
+  const [approvedPartners, setApprovedPartners] = useState<any[]>([]);
 
-// State สำหรับเปิดดูอัลบั้มรูป 1-6 รูป
+  // State สำหรับเปิดดูอัลบั้มรูป 1-6 รูป
   const [galleryPartner, setGalleryPartner] = useState<Partner | null>(null);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
 
-useEffect(() => {
+  useEffect(() => {
     let isMounted = true;
 
-    // ฟังก์ชันแปลงข้อมูลดิบให้เป็นการ์ดพาร์ทเนอร์
     const mapAndSetPartners = (rawList: any[]) => {
       const formatted = rawList.map((d: any) => {
-        const mainPhoto = d.avatarUrl1 || d.avatar || d.imageUrl || d.photoFace || (Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery[0] : '');
+        const rawGallery = d.gallery || d.galleryImages || [];
+        const photoList = Array.isArray(rawGallery) && rawGallery.length > 0 
+          ? rawGallery 
+          : (d.avatarUrl1 || d.avatar || d.imageUrl ? [d.avatarUrl1 || d.avatar || d.imageUrl] : []);
+
+        const mainPhoto = photoList[0] || d.avatarUrl1 || d.avatar || d.imageUrl || '';
+
         return {
-          id: d._id || d.id,
-          name: d.name || d.nickname || 'พาร์ทเนอร์ Laysea',
+          id: d._id || d.id || d.phone,
+          name: d.name || d.nickname || 'Laysea',
           nickname: d.nickname || d.name || 'Laysea',
           gender: d.gender || 'male',
           age: d.age || 28,
           height: d.height || 175,
           location: d.location || 'ชลบุรี / บางแสน',
-          imageUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
-          avatarUrl: mainPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60',
-          galleryImages: Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery : (mainPhoto ? [mainPhoto] : []),
+          imageUrl: mainPhoto,
+          avatarUrl: mainPhoto,
+          gallery: photoList,
+          galleryImages: photoList,
           hourlyRate: d.price || d.hourlyRate || 1500,
           bio: d.bio || 'พาร์ทเนอร์ยืนยันตัวตนเรียบร้อย (Verified Partner)',
           skills: d.services || d.skills || ['ดูแลในวงสังสรรค์', 'เพื่อนเที่ยวคาเฟ่/ชิล'],
@@ -75,7 +80,7 @@ useEffect(() => {
       }
     };
 
-    // 1. ดึงข้อมูลสดจาก Firestore เป็นหลักก่อน
+    // 1. ดึงข้อมูลสดจาก Firestore
     const db = getFirestore(app);
     const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
       const liveList: any[] = [];
@@ -93,21 +98,19 @@ useEffect(() => {
       console.warn('Firestore live sync error:', err);
     });
 
-    // 2. เรียกผ่าน Backend API ควบคู่
+    // 2. ดึงจาก Render Backend (MongoDB Atlas) ควบคู่
     fetch('https://laysea-entertain-backend-1.onrender.com/api/partners')
       .then((res) => {
         if (res.ok) return res.json();
         throw new Error('Backend route not ready');
       })
       .then((data) => {
-        const list = Array.isArray(data) ? data : (data.partners || []);
+        const list = Array.isArray(data) ? data : (data.partners || data.data || []);
         if (list.length > 0) {
           mapAndSetPartners(list);
         }
       })
-      .catch(() => {
-        // เงียบไว้ถ้าหลังบ้านยังไม่ได้เปิด route
-      });
+      .catch(() => {});
 
     return () => {
       isMounted = false;
@@ -115,8 +118,8 @@ useEffect(() => {
     };
   }, []);
 
-// ใช้งานข้อมูลจริงจาก Cloud เท่านั้น (ไม่ใช้ fallback)
-const combinedPartners = approvedPartners;
+  // ใช้ข้อมูลพาร์ทเนอร์จริงจาก Cloud ถ้ายังไม่มีให้ใช้ partners จาก Props
+  const combinedPartners = approvedPartners.length > 0 ? approvedPartners : partners;
 
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
@@ -146,8 +149,8 @@ const combinedPartners = approvedPartners;
     }
 
     // 2. LGBTQ+ Subtype filter
-    if (selectedGender === 'lgbtq' && selectedLbtqSubtype && selectedLbtqSubtype !== 'all') {
-      if (p.lgbtqSubtype && p.lgbtqSubtype !== selectedLbtqSubtype) {
+    if (selectedGender === 'lgbtq' && selectedLgbtqSubtype && selectedLgbtqSubtype !== 'all') {
+      if (p.lgbtqSubtype && p.lgbtqSubtype !== selectedLgbtqSubtype) {
         return false;
       }
     }
@@ -206,15 +209,13 @@ const combinedPartners = approvedPartners;
           </div>
         </div>
 
-        {/* Decorative background glow */}
         <div className="absolute right-0 top-0 bottom-0 w-96 bg-gradient-to-l from-rose-600/10 to-transparent pointer-events-none"></div>
       </div>
 
       {/* Filter and Control Toolbar */}
       <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 space-y-3.5 shadow-lg">
-        {/* Gender Segmented Control: Female, Male, LGBTQ+, All */}
         <div>
-          <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center justify-between">
+          <label className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center justify-between">
             <span>หมวดหมู่พาร์ทเนอร์ตามเพศ / อัตลักษณ์:</span>
             <span className="text-rose-400 font-normal">พบ {filteredPartners.length} คน</span>
           </label>
@@ -281,7 +282,7 @@ const combinedPartners = approvedPartners;
           </div>
         </div>
 
-        {/* Sub-filter: LGBTQ+ Specific Characteristics (ลักษณะเฉพาะ) */}
+        {/* Sub-filter: LGBTQ+ */}
         {selectedGender === 'lgbtq' && (
           <div className="p-3 bg-purple-950/20 rounded-xl border border-purple-500/30 space-y-2 animate-in fade-in duration-200">
             <div className="flex items-center justify-between text-xs">
@@ -313,398 +314,12 @@ const combinedPartners = approvedPartners;
           </div>
         )}
 
-        {/* Search Box and Category Styles */}
+        {/* Search Box */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
-          {/* Search Box */}
           <div className="relative flex-1">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="ค้นหาชื่อ, สกิล (ชงเหล้า, งานแต่ง, ทรานส์, ทอม, ถ่ายรูป), หรือย่าน..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Category Styles */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-          <span className="text-slate-400 font-medium mr-1 flex items-center gap-1 shrink-0">
-            <Filter className="w-3 h-3 text-rose-400" /> รูปแบบงาน:
-          </span>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors text-xs cursor-pointer ${
-                selectedCategory === cat.id
-                  ? 'bg-slate-100 text-slate-900 font-bold shadow-xs'
-                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Grid of Partners */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredPartners.map((partner) => (
-          <div
-            key={partner.id}
-            className={`group bg-slate-900 rounded-3xl border overflow-hidden flex flex-col transition-all duration-200 hover:shadow-xl ${
-              partner.gender === 'lgbtq'
-                ? 'border-purple-500/40 hover:border-purple-400/80 shadow-purple-950/20'
-                : 'border-slate-800/80 hover:border-slate-700 hover:shadow-rose-950/20'
-            }`}
-          >
-            {(() => {
-            // ดึงรูปภาพทั้งหมดของพาร์ทเนอร์
-            const pGallery: string[] = (
-              (Array.isArray(partner.gallery) && partner.gallery.length > 0 ? partner.gallery : null) ||
-              (Array.isArray(partner.galleryImages) && partner.galleryImages.length > 0 ? partner.galleryImages : null) ||
-              (() => {
-                try {
-                  const raw = localStorage.getItem(`gallery_${partner.phone}`) || localStorage.getItem('laysea_partner_gallery') || localStorage.getItem('gallery_0655397994');
-                  return raw ? JSON.parse(raw) : [];
-                } catch (e) { return []; }
-              })()
-            ).filter(Boolean);
-
-            // ใช้รูปแรกในอัลบั้มจริงเป็นรูปหน้าปก
-            const coverPhoto = pGallery.length > 0 
-              ? pGallery[0] 
-              : (partner.avatarUrl1 || partner.avatar || partner.imageUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80');
-
-            return (
-              <div
-                onClick={() => window.open(coverPhoto, '_blank')}
-                className="relative aspect-[4/3] w-full overflow-hidden bg-slate-950 cursor-pointer group/img"
-                title="คลิกเพื่อเปิดดูรูปขนาดเต็ม"
-              >
-                <img
-                  src={coverPhoto}
-                  alt={partner.name}
-                  className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
-                  loading="lazy"
-                />
-
-                <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                  <span className="bg-slate-950/80 text-white text-[11px] px-2.5 py-1 rounded-full border border-slate-700 backdrop-blur-sm">
-                    🔍 แตะดูรูปเต็ม
-                  </span>
-                </div>
-
-                {/* ปุ่มกดดูอัลบั้มภาพ */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const photosToShow = pGallery.length > 0 ? pGallery : [coverPhoto];
-                    setGalleryPartner({ ...partner, galleryImages: photosToShow } as any);
-                    setActiveGalleryIndex(0);
-                  }}
-                  className="absolute bottom-2 right-2 z-10 px-2.5 py-1 bg-slate-900/85 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold border border-slate-700/80 shadow-md backdrop-blur-md flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
-                >
-                  <span>📷 ดูรูป ({pGallery.length > 0 ? pGallery.length : 1} รูป)</span>
-                </button>
-              </div>
-            );
-          })()}
-
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/25 to-transparent"></div>
-
-              {/* Online indicator */}
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-medium text-slate-200 border border-slate-800">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    partner.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
-                  }`}
-                ></span>
-                <span>{partner.isOnline ? 'พร้อมรับงาน' : 'รับงานตามนัด'}</span>
-              </div>
-
-              {/* LGBTQ+ Distinctive Badge (if applicable) */}
-              {partner.gender === 'lgbtq' && (
-                <div className="absolute top-10 left-3 flex items-center gap-1 bg-gradient-to-r from-purple-900/90 via-indigo-900/90 to-rose-900/90 backdrop-blur-md border border-purple-400/50 text-purple-200 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-md">
-                  <span>🌈</span>
-                  <span>{partner.lgbtqIdentityLabel || 'LGBTQ+'}</span>
-                </div>
-              )}
-
-              {/* Verified KYC Criminal Check Badge */}
-              <div className="absolute top-3 right-3 flex items-center gap-1 bg-emerald-950/90 backdrop-blur-md border border-emerald-500/40 text-emerald-300 px-2.5 py-1 rounded-full text-[11px] font-semibold">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>KYC เช็คประวัติแล้ว</span>
-              </div>
-
-              {/* Partner Name & Location Overlay */}
-              <div className="absolute bottom-3 left-3 right-3">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <h3 className="text-lg font-bold text-white tracking-tight">
-                      {partner.name} <span className="text-rose-400 text-sm font-normal">({partner.nickname})</span>
-                    </h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-300 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      <span className="truncate">{partner.location}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-2 py-0.5 rounded text-xs font-bold shrink-0">
-                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                    <span>{partner.rating}</span>
-                    <span className="text-[10px] text-slate-400">({partner.reviewsCount})</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-{/* แถบรูปภาพผลงาน 1-6 รูป สำหรับลูกค้ากดดู */}
-          {(() => {
-            const savedGallery = localStorage.getItem(`gallery_${partner.phone}`)
-              ? JSON.parse(localStorage.getItem(`gallery_${partner.phone}`) || '[]')
-              : (partner.gallery || [partner.imageUrl]);
-
-            if (!savedGallery || savedGallery.length <= 1) return null;
-
-            return (
-              <div className="px-3 py-2 bg-slate-950/80 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                <span className="text-[10px] text-slate-400 shrink-0 font-medium mr-1">📸 รูป:</span>
-                {savedGallery.slice(0, 6).map((imgUrl: string, imgIdx: number) => {
-                  const isCurrent = (activePhotoMap[partner.id] || partner.imageUrl) === imgUrl;
-                  return (
-                    <button
-                      key={imgIdx}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActivePhotoMap((prev) => ({ ...prev, [partner.id]: imgUrl }));
-                      }}
-                      className={`relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                        isCurrent ? 'border-rose-500 scale-105 ring-2 ring-rose-500/30' : 'border-slate-700 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={imgUrl} alt={`รูปที่ ${imgIdx + 1}`} className="w-full h-full object-cover" />
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })()}
-            {/* Profile Content */}
-            <div className="p-4 flex-1 flex flex-col justify-between space-y-3.5">
-              <div>
-                {/* Style Presentation Callout */}
-                {partner.stylePresentation && (
-                  <div className="text-[11px] font-semibold text-rose-300 flex items-center gap-1 mb-1.5">
-                    <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span className="truncate">{partner.stylePresentation}</span>
-                  </div>
-                )}
-
-                {/* Clean Metadata Line */}
-                <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 flex-wrap">
-                  <span>อายุ {partner.age} ปี</span>
-                  <span aria-hidden="true">·</span>
-                  <span>ส่วนสูง {partner.height} ซม.</span>
-                  {partner.pronouns && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="text-slate-300">{partner.pronouns}</span>
-                    </>
-                  )}
-                  <span aria-hidden="true">·</span>
-                  <span>สำเร็จ {partner.completedJobs} งาน</span>
-                </div>
-
-                {/* Bio text */}
-                <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                  {partner.bio}
-                </p>
-
-                {/* Specific Traits Box (ลักษณะเฉพาะ) */}
-                {partner.specificTraits && partner.specificTraits.length > 0 && (
-                  <div className="mt-2.5 p-2 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] space-y-1">
-                    <div className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
-                      <Award className="w-3 h-3 text-amber-400" />
-                      <span>ลักษณะเฉพาะโดดเด่น:</span>
-                    </div>
-                    <ul className="space-y-0.5 text-slate-300 text-[10.5px]">
-                      {partner.specificTraits.slice(0, 3).map((trait, tIdx) => (
-                        <li key={tIdx} className="flex items-start gap-1">
-                          <span className="text-rose-400 shrink-0">•</span>
-                          <span className="truncate">{trait}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Specialties / Skills Tags */}
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {partner.skills.slice(0, 3).map((skill, sIdx) => (
-                    <span
-                      key={sIdx}
-                      className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 border border-slate-700/60"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                  {partner.drinkingSkill.includes('ปาร์ตี้') && (
-                    <span className="text-[11px] px-2 py-0.5 rounded-lg bg-amber-950/40 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                      <Wine className="w-3 h-3" /> ชงเหล้าเป็น
-                    </span>
-                  )}
-                </div>
-
-                {/* Safety Guarantee Info */}
-                <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1 text-emerald-400">
-                    <Check className="w-3 h-3" /> มีประกันอุบัติเหตุคุ้มครอง
-                  </span>
-                  <span className="text-slate-500">
-                    ตรงปก 100% ไร้ฟิลเตอร์
-                  </span>
-                </div>
-              </div>
-
-              {/* Pricing & Call to Actions */}
-              <div className="pt-2 border-t border-slate-800 space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <div>
-                    <div className="text-xs text-slate-400">
-                      อัตราค่าบริการเริ่มต้น:
-                    </div>
-                    <div className="text-[10px] text-amber-400 font-medium">
-                      ✨ 1-4 ชม. & เหมา 1 วัน ลดขั้นบันได
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-bold text-rose-400 font-['Plus_Jakarta_Sans']">
-                      {partner.hourlyRate.toLocaleString()}
-                    </span>
-                    <span className="text-xs text-slate-300 ml-1">เครดิต / ชม.</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {/* VDO Call Button */}
-                  <button
-                    onClick={() => onSelectVdoCall(partner)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-600/20 to-rose-600/20 hover:from-amber-600/30 hover:to-rose-600/30 border border-amber-500/40 text-amber-200 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-                  >
-                    <Video className="w-3.5 h-3.5 text-amber-400" />
-                    <span>VDO Call ดูตัว ({partner.vdoCallRate} C)</span>
-                  </button>
-
-                  {/* Booking Button */}
-                  <button
-                    onClick={() => onSelectBook(partner)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-rose-900/20 transition-all cursor-pointer"
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>จองนัดหมาย</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {filteredPartners.length === 0 && (
-        <div className="text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800">
-          <p className="text-slate-400 text-sm">ไม่พบพาร์ทเนอร์ตามเงื่อนไขที่เลือก</p>
-          <button
-            onClick={() => {
-              setSelectedGender('all');
-              setSelectedLgbtqSubtype('all');
-              setSelectedCategory('all');
-              setSearchQuery('');
-            }}
-            className="mt-3 px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
-          >
-            ล้างตัวกรองทั้งหมด
-          </button>
-        </div>
-      )}    
-{/* ป๊อปอัปแสดงอัลบั้มรูป 1-6 รูป */}
-      {galleryPartner && (
-        <div 
-          onClick={() => setGalleryPartner(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-3 relative flex flex-col"
-          >
-            {/* หัวข้อ Modal */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div>
-                <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
-                  <span>📸 อัลบั้มรูปของ {galleryPartner.name}</span>
-                </h3>
-                <span className="text-[10px] text-slate-400">
-                  รูปที่ {activeGalleryIndex + 1} จาก {((galleryPartner as any).galleryImages || []).length} รูป
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setGalleryPartner(null)}
-                className="w-7 h-7 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white flex items-center justify-center cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* แสดงรูปภาพขนาดใหญ่ */}
-            <div className="w-full h-72 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
-              <img
-                src={((galleryPartner as any).galleryImages || [])[activeGalleryIndex] || galleryPartner.imageUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'}
-                alt={`Photo ${activeGalleryIndex + 1}`}
-                className="w-full h-full object-contain"
-              />
-            </div>
-
-            {/* แถบ Thumbnail รูปย่อย 1-6 รูป ด้านล่างสำหรับกดเปลี่ยนรูป */}
-            {((galleryPartner as any).galleryImages || []).length > 1 && (
-              <div className="flex gap-2 overflow-x-auto py-1 justify-center">
-                {((galleryPartner as any).galleryImages || []).map((imgUrl: string, idx: number) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setActiveGalleryIndex(idx)}
-                    className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
-                      activeGalleryIndex === idx 
-                        ? 'border-rose-500 scale-105 shadow-md shadow-rose-950/50' 
-                        : 'border-slate-800 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <img src={imgUrl} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setGalleryPartner(null)}
-              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer mt-1"
-            >
-              ปิดหน้าต่าง
-            </button>
-          </div>
-        </div>
-      )}
-</div>
-  );
-};
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-8 py-2 text-xs text-white placeholder-slate-5
