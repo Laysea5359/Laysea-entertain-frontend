@@ -55,6 +55,53 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
 const [showKycModal, setShowKycModal] = useState(false);
 const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 'approved' | 'rejected'>('not_submitted');
   const [isKycVerified, setIsKycVerified] = useState(false);
+// State และฟังก์ชันสำหรับเปลี่ยนชื่อพาร์ทเนอร์
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameVal, setEditNameVal] = useState(userSession?.name || '');
+
+  const handleSavePartnerName = async () => {
+    const newName = editNameVal.trim();
+    if (!newName) {
+      alert('กรุณากรอกชื่อพาร์ทเนอร์');
+      return;
+    }
+    const pPhone = userSession?.phone || userSession?.id || '0655397994';
+
+    try {
+      // 1. บันทึกเข้า MongoDB Atlas (Render Backend)
+      await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: pPhone,
+          name: newName,
+          nickname: newName
+        })
+      });
+
+      // 2. บันทึกเข้า Firestore
+      try {
+        const db = getFirestore(app);
+        await setDoc(doc(db, 'partners', pPhone), {
+          name: newName,
+          nickname: newName
+        }, { merge: true });
+      } catch (e) {}
+
+      // 3. อัปเดตข้อมูล Session บนหน้าจอทันที (ไม่ต้องรีโหลดหน้าเว็บ)
+      if (userSession) {
+        userSession.name = newName;
+        userSession.nickname = newName;
+        localStorage.setItem('laysea_user_session', JSON.stringify({ ...userSession, name: newName, nickname: newName }));
+      }
+
+      setIsEditingName(false);
+      alert('บันทึกชื่อพาร์ทเนอร์เรียบร้อยแล้ว!');
+    } catch (err) {
+      console.error(err);
+      alert('บันทึกชื่อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
 
   useEffect(() => {
     const checkKycStatus = async () => {
@@ -815,7 +862,46 @@ const handleStartProgress = async (bookingId: string) => {
                 </div>
 
                 <div className="flex-1">
-                  <h3 className="font-bold text-white text-sm">{userSession.name}</h3>
+                  {isEditingName ? (
+  <div className="flex items-center gap-1.5 mb-1">
+    <input
+      type="text"
+      value={editNameVal}
+      onChange={(e) => setEditNameVal(e.target.value)}
+      className="bg-slate-800 text-white px-2 py-0.5 rounded text-xs border border-rose-500/50 outline-none w-28"
+      placeholder="ชื่อพาร์ทเนอร์"
+      autoFocus
+    />
+    <button
+      type="button"
+      onClick={handleSavePartnerName}
+      className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded font-bold cursor-pointer"
+    >
+      บันทึก
+    </button>
+    <button
+      type="button"
+      onClick={() => setIsEditingName(false)}
+      className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] px-2 py-0.5 rounded cursor-pointer"
+    >
+      ยกเลิก
+    </button>
+  </div>
+) : (
+  <div className="flex items-center gap-2">
+    <h3 className="font-bold text-white text-sm">{userSession?.name || 'Laysea'}</h3>
+    <button
+      type="button"
+      onClick={() => {
+        setEditNameVal(userSession?.name || 'Laysea');
+        setIsEditingName(true);
+      }}
+      className="text-rose-400 hover:text-rose-300 text-[11px] underline cursor-pointer"
+    >
+      ✏️ แก้ไขชื่อ
+    </button>
+  </div>
+)}
                   <div className="text-xs text-rose-400">เรตติ้ง 4.96 ★ (142 รีวิว)</div>
                   <div className="flex items-center gap-1 text-[11px] text-emerald-400 mt-1">
                     <Phone className="w-3 h-3" />
