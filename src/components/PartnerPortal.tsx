@@ -1,27 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Siren,
   ShieldCheck,
   Calendar,
   Clock,
   MapPin,
-  Award,
   DollarSign,
   User,
   LogOut,
   AlertTriangle,
-  PhoneCall,
   CheckCircle2,
   FileText,
-  Wine,
   Navigation,
   Trash2,
-  Lock,
   Phone,
-  X,
   Camera,
   Check,
-  RotateCcw,
   Download,
 } from 'lucide-react';
 import { UserSession, Booking } from '../types';
@@ -29,198 +23,129 @@ import { SosEmergencyModal } from './SosEmergencyModal';
 import { LiveTrackingModal } from './LiveTrackingModal';
 import { AvatarUploadModal } from './AvatarUploadModal';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
-import { INITIAL_PARTNERS } from '../data/partners';
 import { KycModal } from './KycModal';
 import { uploadImageToCloud } from '../utils/storageUpload';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import { app } from '../firebase';
+
+/* ------------------------------------------------------------------ */
+/* Types & constants                                                   */
+/* ------------------------------------------------------------------ */
 
 interface PartnerPortalProps {
   userSession: UserSession;
   onLogout: () => void;
   onTriggerSos: (threat: string) => void;
   onUpdateAvatar?: (url: string) => void;
+  onUpdateProfile?: (patch: { name: string; nickname: string }) => void;
   onDeleteAccount?: () => void;
   onRefreshBookings?: () => void;
 }
+
+type PartnerJob = Booking & Record<string, any>;
+type KycStatus = 'not_submitted' | 'pending_review' | 'approved' | 'rejected';
+
+const API_URL: string =
+  import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
+
+const JOBS_POLL_MS = 4000;
+const KYC_POLL_MS = 5000;
+const MAX_GALLERY_IMAGES = 6;
+const MAX_IMAGE_SIZE_MB = 10;
+const PARTNER_SHARE_RATE = 0.8;
+const WITHHOLDING_TAX_RATE = 0.03;
+
+// TODO: ตรวจสอบข้อมูลผู้จ่ายเงินให้ตรงกับข้อมูลจดทะเบียนจริงก่อนใช้งาน
+// (ของเดิมในไฟล์มี 2 ชุดที่ไม่ตรงกัน: ชื่อบริษัท และเลขผู้เสียภาษี)
+const PAYER_INFO = {
+  nameTh: 'บริษัท เลซี เอ็นเตอร์เทน จำกัด',
+  nameEn: 'LAYSEA ENTERTAIN PLATFORM CO., LTD.',
+  taxId: '0205567012345',
+  address: 'ชลบุรี ประเทศไทย',
+};
+
+const PENDING_STATUSES = ['pending', 'matched_pending', 'waiting'];
+const CONFIRMED_STATUSES = ['accepted', 'confirmed', 'in_progress'];
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+const toNumber = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+const formatBaht = (n: number): string =>
+  n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** รายได้ของพาร์ทเนอร์ก่อนหักภาษี (Gross) */
+const getPartnerGross = (job: PartnerJob): number =>
+  toNumber(job.partnerGrossBaht) || round2(toNumber(job.totalAmountBaht) * PARTNER_SHARE_RATE);
+
+/** รายได้สุทธิหลังหักภาษี 3% */
+const getPartnerNet = (job: PartnerJob): number =>
+  toNumber(job.netPartnerPayoutBaht) ||
+  round2(getPartnerGross(job) * (1 - WITHHOLDING_TAX_RATE));
+
+const normalizeJob = (item: any): PartnerJob => ({
+  ...item,
+  id: item._id || item.id,
+  eventType: item.eventType || item.serviceType || item.title || 'บริการดูแล / เพื่อนเที่ยว',
+  startTime: item.startTime || item.time || item.bookingTime || '18:00',
+  durationHours: item.durationHours || item.hours || 3,
+  location: item.location || item.address || item.venue || 'ตามที่ลูกค้าระบุ',
+  clientName: item.clientName || item.customerName || item.userName || 'ลูกค้าทั่วไป',
+  clientPhone: item.clientPhone || item.customerPhone || item.phone || '-',
+  status: item.status || 'pending',
+  // ไม่ใส่ราคา default สมมติ (เดิม 2400) เพราะจะไปปนกับยอดรายได้จริง
+  totalAmountBaht: toNumber(item.totalAmountBaht ?? item.totalPrice ?? item.price),
+});
+
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
 
 export const PartnerPortal: React.FC<PartnerPortalProps> = ({
   userSession,
   onLogout,
   onTriggerSos,
   onUpdateAvatar,
+  onUpdateProfile,
   onDeleteAccount,
   onRefreshBookings,
 }) => {
-const [showKycModal, setShowKycModal] = useState(false);
-const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 'approved' | 'rejected'>('not_submitted');
+  // เบอร์/ไอดีของพาร์ทเนอร์ที่ล็อกอินอยู่จริง (ไม่มี fallback เป็นเบอร์สมมติ)
+  const partnerPhone = userSession?.phone || userSession?.id || '';
+  const partnerIdentifier = userSession?.partnerProfileId || partnerPhone;
+
+  // --- KYC ---
+  const [showKycModal, setShowKycModal] = useState(false);
+  const [kycStatus, setKycStatus] = useState<KycStatus>('not_submitted');
   const [isKycVerified, setIsKycVerified] = useState(false);
-// State และฟังก์ชันสำหรับเปลี่ยนชื่อพาร์ทเนอร์
+
+  // --- ชื่อพาร์ทเนอร์ ---
+  const [displayName, setDisplayName] = useState(userSession?.name || '');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameVal, setEditNameVal] = useState(userSession?.name || '');
+  const [isSavingName, setIsSavingName] = useState(false);
 
-  const handleSavePartnerName = async () => {
-    const newName = editNameVal.trim();
-    if (!newName) {
-      alert('กรุณากรอกชื่อพาร์ทเนอร์');
-      return;
-    }
-    const pPhone = userSession?.phone || userSession?.id || '0655397994';
-
-    try {
-      // 1. บันทึกเข้า MongoDB Atlas (Render Backend)
-      await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: pPhone,
-          name: newName,
-          nickname: newName
-        })
-      });
-
-      // 2. บันทึกเข้า Firestore
-      try {
-        const db = getFirestore(app);
-        await setDoc(doc(db, 'partners', pPhone), {
-          name: newName,
-          nickname: newName
-        }, { merge: true });
-      } catch (e) {}
-
-      // 3. อัปเดตข้อมูล Session บนหน้าจอทันที (ไม่ต้องรีโหลดหน้าเว็บ)
-      if (userSession) {
-        userSession.name = newName;
-        userSession.nickname = newName;
-        localStorage.setItem('laysea_user_session', JSON.stringify({ 
-          ...userSession, 
-          name: newName, 
-          nickname: newName 
-        }));
-      }
-
-      alert('บันทึกชื่อพาร์ทเนอร์เรียบร้อยแล้ว!');
-    } catch (err) {
-      console.error(err);
-      alert('บันทึกชื่อเรียบร้อยแล้ว');
-    } finally {
-      // สั่งให้หุบช่องพิมพ์กลับไปแสดงชื่อปกติแน่นอน 100%
-      setIsEditingName(false);
-    }
-  };
-
-  useEffect(() => {
-    const checkKycStatus = async () => {
-      const phone = userSession?.phone;
-      if (!phone) return;
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-        const cleanPhone = phone.replace(/[^0-9]/g, '');
-        const res = await fetch(`${apiUrl}/api/kyc/status/${cleanPhone}`);
-        const data = await res.json();
-        if (data.success) {
-          setKycStatus(data.status);
-          setIsKycVerified(data.isKycVerified);
-        }
-      } catch (err) {
-        console.error('Error fetching KYC status:', err);
-      }
-    };
-
-    checkKycStatus();
-    const interval = setInterval(checkKycStatus, 5000);
-    return () => clearInterval(interval);
-  }, [userSession]);
-
-// เก็บรูปภาพอัลบั้ม 1-6 รูป
+  // --- อัลบั้มรูป ---
+  const galleryStorageKey = `gallery_${partnerPhone}`;
   const [galleryImages, setGalleryImages] = useState<string[]>(() => {
-    const saved = localStorage.getItem(`gallery_${userSession?.phone}`);
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(galleryStorageKey);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   });
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
 
-  // ฟังก์ชันเลือกรูปภาพเข้าอัลบั้ม (สูงสุด 6 รูป) อัปโหลดขึ้น Cloud Storage
-  const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    if (galleryImages.length >= 6) {
-      alert('สามารถอัปโหลดรูปภาพได้สูงสุด 6 รูปครับ');
-      return;
-    }
-
-    const file = files[0];
-    try {
-      // 1. ส่งรูปขึ้น Firebase Cloud Storage
-      const cloudUrl = await uploadImageToCloud(file, `partners/${userSession?.phone || 'general'}/gallery`);
-
-      // 2. นำ URL คลาวด์ที่ได้มาเก็บลง State และ LocalStorage
-      const updated = [...galleryImages, cloudUrl].slice(0, 6);
-      setGalleryImages(updated);
-      localStorage.setItem(`gallery_${userSession?.phone}`, JSON.stringify(updated));
-      localStorage.setItem('laysea_partner_gallery', JSON.stringify(updated));
-
-// บันทึก/อัปเดตข้อมูลพาร์ทเนอร์และรูปอัลบั้มลง Firestore และ MongoDB Atlas
-    try {
-      // ดึงเบอร์ของพาร์ทเนอร์ที่ล็อกอินอยู่จริง ถ้าไม่มีให้ดึงจาก id หรือ session
-      const partnerPhone = userSession?.phone || userSession?.id || '';
-      if (!partnerPhone) {
-        alert('ไม่พบข้อมูลเบอร์โทรศัพท์ของพาร์ทเนอร์ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
-        return;
-      }
-
-      const partnerName = userSession?.name || userSession?.nickname || 'พาร์ทเนอร์';
-
-      // 1. บันทึกลง Firestore
-      const db = getFirestore(app);
-      await setDoc(doc(db, 'partners', partnerPhone), {
-        id: partnerPhone,
-        phone: partnerPhone,
-        name: partnerName,
-        gallery: updated,
-        galleryImages: updated,
-        avatar: updated[0] || userSession?.avatar || '',
-        avatarUrl1: updated[0] || userSession?.avatar || '',
-        rating: userSession?.rating || 4.96,
-        isVerified: true,
-        status: 'online',
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-
-      // 2. บันทึกลง MongoDB Atlas หลังบ้าน Render ควบคู่กันทันที
-      try {
-        await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: partnerPhone,
-            name: partnerName,
-            gallery: updated,
-            galleryImages: updated,
-            avatar: updated[0] || '',
-            avatarUrl1: updated[0] || ''
-          })
-        });
-      } catch (backendErr) {
-        console.warn('Backend MongoDB sync error:', backendErr);
-      }
-
-    } catch (fsErr) {
-      console.error('Save error:', fsErr);
-    }
-
-      alert('อัปโหลดรูปภาพขึ้น Cloud สำเร็จเรียบร้อยแล้ว!');
-    } catch (err) {
-      console.error('Cloud Upload error:', err);
-      alert('อัปโหลดขึ้น Cloud ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
-    }
-  };
-
-  // ฟังก์ชันลบรูป
-  const handleRemoveGalleryImage = (indexToRemove: number) => {
-    const updated = galleryImages.filter((_, idx) => idx !== indexToRemove);
-    setGalleryImages(updated);
-    localStorage.setItem(`gallery_${userSession?.phone}`, JSON.stringify(updated));
-  };
+  // --- UI / งาน ---
   const [partnerTab, setPartnerTab] = useState<'jobs' | 'safety' | 'earnings' | 'profile'>('jobs');
   const [isSosOpen, setIsSosOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
@@ -228,77 +153,310 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [showWithholdingCertModal, setShowWithholdingCertModal] = useState(false);
-  const [jobs, setJobs] = useState<Booking[]>([]);
+  const [jobs, setJobs] = useState<PartnerJob[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
-  const [activeTrackingJob, setActiveTrackingJob] = useState<Booking | null>(null);
+  const [activeTrackingJob, setActiveTrackingJob] = useState<PartnerJob | null>(null);
 
-  // Fetch partner jobs from backend
-  const fetchPartnerJobs = async () => {
-    setIsLoadingJobs(true);
-    try {
-      const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-      const partnerIdentifier = userSession?.partnerProfileId || userSession?.phone || userSession?.id || '';
-      
-      // ดึงงานโดยใช้ role=partner เพื่อให้เห็นงานจองทั้งหมด
-      const res = await fetch(`${backendUrl}/api/bookings?role=partner&partnerId=${partnerIdentifier}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': partnerIdentifier,
-          'x-user-role': 'partner',
-        },
-      });
+  // --- พิกัดจริงของอุปกรณ์ (แท็บความปลอดภัย) ---
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState(false);
 
-      if (res.ok) {
+  const isFetchingJobsRef = useRef(false);
+  // งานที่จบในเครื่องแล้ว กันไม่ให้การ poll ครั้งถัดไปเขียนทับสถานะกลับ
+  const locallyCompletedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setDisplayName(userSession?.name || '');
+  }, [userSession?.name]);
+
+  /* ---------------- KYC polling ---------------- */
+  useEffect(() => {
+    const phone = userSession?.phone;
+    if (!phone) return;
+
+    let cancelled = false;
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+    const checkKycStatus = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await fetch(`${API_URL}/api/kyc/status/${cleanPhone}`);
+        if (!res.ok) return;
         const data = await res.json();
-        // ดึงรายการงานออกมาไม่ว่าจะส่งมาเป็น array ตรงๆ หรือ data.bookings หรือ data.data
-        const rawList = Array.isArray(data) ? data : (data.bookings || data.data || data.jobs || []);
-        
-        // แปลงฟิลด์ให้ตรงกับการ์ดแสดงผลบนหน้าจอ
-        const formattedJobs = rawList.map((item: any) => ({
-          ...item,
-          id: item._id || item.id,
-          eventType: item.eventType || item.serviceType || item.title || 'บริการดูแล / เพื่อนเที่ยว',
-          startTime: item.startTime || item.time || item.bookingTime || '18:00',
-          durationHours: item.durationHours || item.hours || 3,
-          location: item.location || item.address || item.venue || 'ตามที่ลูกค้าระบุ',
-          clientName: item.clientName || item.customerName || item.userName || 'ลูกค้าทั่วไป',
-          clientPhone: item.clientPhone || item.customerPhone || item.phone || '-',
-          status: item.status || 'pending',
-          totalAmountBaht: item.totalAmountBaht || item.totalPrice || item.price || 2400,
-          netPartnerPayoutBaht: item.netPartnerPayoutBaht || (Number(item.totalAmountBaht || item.price || 2400) * 0.8 * 0.97)
-        }));
-
-        setJobs(formattedJobs);
+        if (cancelled || !data.success) return;
+        setKycStatus(data.status);
+        setIsKycVerified(Boolean(data.isKycVerified));
+      } catch (err) {
+        console.error('Error fetching KYC status:', err);
       }
+    };
+
+    checkKycStatus();
+    const interval = setInterval(checkKycStatus, KYC_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [userSession?.phone]);
+
+  /* ---------------- Jobs polling ---------------- */
+  const fetchPartnerJobs = useCallback(
+    async (showLoading = false) => {
+      if (!partnerIdentifier || isFetchingJobsRef.current) return;
+      isFetchingJobsRef.current = true;
+      if (showLoading) setIsLoadingJobs(true);
+
+      try {
+        const res = await fetch(
+          `${API_URL}/api/bookings?role=partner&partnerId=${encodeURIComponent(partnerIdentifier)}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': partnerIdentifier,
+              'x-user-role': 'partner',
+            },
+          }
+        );
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const rawList = Array.isArray(data)
+          ? data
+          : data.bookings || data.data || data.jobs || [];
+
+        const formatted: PartnerJob[] = rawList
+          .map(normalizeJob)
+          .map((job: PartnerJob) =>
+            locallyCompletedRef.current.has(job.id) ? { ...job, status: 'completed' } : job
+          );
+
+        setJobs(formatted);
+      } catch (err) {
+        console.error('Failed to load partner jobs:', err);
+      } finally {
+        isFetchingJobsRef.current = false;
+        if (showLoading) setIsLoadingJobs(false);
+      }
+    },
+    [partnerIdentifier]
+  );
+
+  useEffect(() => {
+    fetchPartnerJobs(true);
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchPartnerJobs();
+    }, JOBS_POLL_MS);
+    return () => clearInterval(interval);
+  }, [fetchPartnerJobs]);
+
+  /* ---------------- พิกัดจริง ---------------- */
+  useEffect(() => {
+    if (partnerTab !== 'safety') return;
+    if (!('geolocation' in navigator)) {
+      setLocationError(true);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocationError(false);
+        setCurrentCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      () => setLocationError(true),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, [partnerTab]);
+
+  /* ---------------- ชื่อพาร์ทเนอร์ ---------------- */
+  const handleSavePartnerName = async () => {
+    const newName = editNameVal.trim();
+    if (!newName) {
+      alert('กรุณากรอกชื่อพาร์ทเนอร์');
+      return;
+    }
+    if (!partnerPhone) {
+      alert('ไม่พบข้อมูลเบอร์โทรศัพท์ของพาร์ทเนอร์ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+      return;
+    }
+
+    setIsSavingName(true);
+    try {
+      // 1. บันทึกเข้า MongoDB Atlas (Render Backend)
+      const res = await fetch(`${API_URL}/api/users/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: partnerPhone, name: newName, nickname: newName }),
+      });
+      if (!res.ok) throw new Error(`Backend responded ${res.status}`);
+
+      // 2. บันทึกเข้า Firestore (พลาดได้ ไม่ทำให้ทั้งขั้นตอนล้มเหลว)
+      try {
+        const db = getFirestore(app);
+        await setDoc(
+          doc(db, 'partners', partnerPhone),
+          { name: newName, nickname: newName },
+          { merge: true }
+        );
+      } catch (fsErr) {
+        console.warn('Firestore name sync error:', fsErr);
+      }
+
+      // 3. อัปเดตหน้าจอทันที โดยไม่แก้ props ตรงๆ
+      setDisplayName(newName);
+      onUpdateProfile?.({ name: newName, nickname: newName });
+      try {
+        localStorage.setItem(
+          'laysea_user_session',
+          JSON.stringify({ ...userSession, name: newName, nickname: newName })
+        );
+      } catch (lsErr) {
+        console.warn('localStorage save error:', lsErr);
+      }
+
+      setIsEditingName(false);
+      alert('บันทึกชื่อพาร์ทเนอร์เรียบร้อยแล้ว!');
     } catch (err) {
-      console.error('Failed to load partner jobs:', err);
+      console.error('Save partner name error:', err);
+      alert('บันทึกชื่อไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง');
     } finally {
-      setIsLoadingJobs(false);
+      setIsSavingName(false);
     }
   };
 
-  useEffect(() => {
-    fetchPartnerJobs();
-    // ดึงงานอัตโนมัติทุกๆ 4 วินาที เพื่อให้งานใหม่เด้งขึ้นทันที
-    const interval = setInterval(fetchPartnerJobs, 4000);
-    return () => clearInterval(interval);
-  }, [userSession]);
+  /* ---------------- อัลบั้มรูป ---------------- */
+  const persistGalleryLocally = (images: string[]) => {
+    setGalleryImages(images);
+    try {
+      localStorage.setItem(galleryStorageKey, JSON.stringify(images));
+      localStorage.setItem('laysea_partner_gallery', JSON.stringify(images));
+    } catch (err) {
+      console.warn('localStorage gallery save error:', err);
+    }
+  };
+
+  /** ซิงก์อัลบั้มไป Firestore + MongoDB คืนค่า true เมื่อสำเร็จทั้งคู่ */
+  const syncGalleryToServer = async (images: string[]): Promise<boolean> => {
+    if (!partnerPhone) return false;
+    let allOk = true;
+
+    const namePart = displayName ? { name: displayName } : {};
+    const avatar = userSession?.avatarUrl || images[0] || '';
+
+    try {
+      const db = getFirestore(app);
+      await setDoc(
+        doc(db, 'partners', partnerPhone),
+        {
+          id: partnerPhone,
+          phone: partnerPhone,
+          ...namePart,
+          gallery: images,
+          galleryImages: images,
+          avatar,
+          avatarUrl1: images[0] || '',
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error('Firestore gallery sync error:', err);
+      allOk = false;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/users/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: partnerPhone,
+          ...namePart,
+          gallery: images,
+          galleryImages: images,
+          avatar,
+          avatarUrl1: images[0] || '',
+        }),
+      });
+      if (!res.ok) allOk = false;
+    } catch (err) {
+      console.warn('Backend MongoDB sync error:', err);
+      allOk = false;
+    }
+
+    return allOk;
+  };
+
+  const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = ''; // เลือกไฟล์เดิมซ้ำได้
+    if (!file || isUploadingGallery) return;
+
+    if (galleryImages.length >= MAX_GALLERY_IMAGES) {
+      alert(`สามารถอัปโหลดรูปภาพได้สูงสุด ${MAX_GALLERY_IMAGES} รูปครับ`);
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+      alert(`ไฟล์ใหญ่เกินไป (สูงสุด ${MAX_IMAGE_SIZE_MB} MB)`);
+      return;
+    }
+    if (!partnerPhone) {
+      alert('ไม่พบข้อมูลเบอร์โทรศัพท์ของพาร์ทเนอร์ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+      return;
+    }
+
+    setIsUploadingGallery(true);
+    try {
+      const cloudUrl = await uploadImageToCloud(file, `partners/${partnerPhone}/gallery`);
+      const updated = [...galleryImages, cloudUrl].slice(0, MAX_GALLERY_IMAGES);
+      persistGalleryLocally(updated);
+
+      const synced = await syncGalleryToServer(updated);
+      alert(
+        synced
+          ? 'อัปโหลดรูปภาพขึ้น Cloud สำเร็จเรียบร้อยแล้ว!'
+          : 'อัปโหลดรูปสำเร็จ แต่บันทึกข้อมูลกับเซิร์ฟเวอร์ไม่ครบ กรุณาลองใหม่อีกครั้งภายหลัง'
+      );
+    } catch (err) {
+      console.error('Cloud Upload error:', err);
+      alert('อัปโหลดขึ้น Cloud ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
+    } finally {
+      setIsUploadingGallery(false);
+    }
+  };
+
+  const handleRemoveGalleryImage = async (indexToRemove: number) => {
+    if (isUploadingGallery) return;
+    const updated = galleryImages.filter((_, idx) => idx !== indexToRemove);
+    persistGalleryLocally(updated);
+    const synced = await syncGalleryToServer(updated);
+    if (!synced) {
+      alert('ลบรูปในเครื่องแล้ว แต่อัปเดตกับเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
+
+  /* ---------------- Job actions ---------------- */
+  const updateJobStatus = (bookingId: string, status: string) =>
+    setJobs((prev) => prev.map((j) => (j.id === bookingId ? { ...j, status } : j)));
 
   // Partner Action: Accept Gig (5-min SLA response)
   const handleAcceptJob = async (bookingId: string) => {
     try {
-      const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-      const res = await fetch(`${backendUrl}/api/bookings/${bookingId}/accept`, {
+      const res = await fetch(`${API_URL}/api/bookings/${bookingId}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message || 'ตอบรับงานเรียบร้อย! พิกัดนัดพบและเบอร์ติดต่อของลูกค้าได้รับการเปิดเผยแล้ว');
-        setJobs(prevJobs =>
-          prevJobs.map(j => (j.id === bookingId ? { ...j, status: 'accepted' } : j))
+        alert(
+          data.message ||
+            'ตอบรับงานเรียบร้อย! พิกัดนัดพบและเบอร์ติดต่อของลูกค้าได้รับการเปิดเผยแล้ว'
         );
-        if (typeof fetchPartnerJobs === 'function') fetchPartnerJobs();
+        updateJobStatus(bookingId, 'accepted');
+        fetchPartnerJobs();
+        onRefreshBookings?.();
       } else {
         alert(data.message || 'ไม่สามารถรับงานได้');
       }
@@ -310,12 +468,13 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
 
   // Partner Action: Reject Gig
   const handleRejectJob = async (bookingId: string) => {
-    const reason = prompt('กรุณาระบุเหตุผลการปฏิเสธงาน (เช่น ไม่สะดวกเรื่องเวลา / ติดภารกิจอื่น):');
+    const reason = prompt(
+      'กรุณาระบุเหตุผลการปฏิเสธงาน (เช่น ไม่สะดวกเรื่องเวลา / ติดภารกิจอื่น):'
+    );
     if (!reason) return;
 
     try {
-      const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-      const res = await fetch(`${backendUrl}/api/bookings/${bookingId}/cancel`, {
+      const res = await fetch(`${API_URL}/api/bookings/${bookingId}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: `พาร์ทเนอร์ปฏิเสธงาน: ${reason}`, role: 'partner' }),
@@ -323,8 +482,9 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       const data = await res.json();
       if (data.success) {
         alert('ปฏิเสธงานเรียบร้อยแล้ว ระบบจะส่งต่องานให้พาร์ทเนอร์ท่านอื่น');
-        setJobs(prevJobs => prevJobs.filter(j => j.id !== bookingId));
-        if (typeof fetchPartnerJobs === 'function') fetchPartnerJobs();
+        setJobs((prev) => prev.filter((j) => j.id !== bookingId));
+        fetchPartnerJobs();
+        onRefreshBookings?.();
       } else {
         alert(data.message || 'ไม่สามารถปฏิเสธงานได้');
       }
@@ -334,60 +494,106 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     }
   };
 
-// Partner Action: Start Progress (เริ่มงาน)
-const handleStartProgress = async (bookingId: string) => {
-  // หากเป็นงานจำลอง ให้ปรับสถานะในเครื่องทันที ไม่ต้องยิงไป Render
-  if (!bookingId || bookingId.startsWith('BOOK-') || bookingId.length < 10) {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === bookingId ? { ...j, status: 'in_progress' } : j))
-    );
-    alert('เริ่มงานเรียบร้อย เปิดระบบคุ้มครองความปลอดภัยแล้ว');
-    return;
-  }
-
-  try {
-    const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-    const res = await fetch(`${backendUrl}/api/bookings/${bookingId}/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (res.ok) {
+  // Partner Action: Start Progress (เริ่มงาน) — คืน true เมื่อเริ่มได้จริง
+  const handleStartProgress = async (bookingId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/api/bookings/${bookingId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        alert('ไม่สามารถเริ่มงานได้ กรุณาลองใหม่อีกครั้ง');
+        return false;
+      }
+      updateJobStatus(bookingId, 'in_progress');
       alert('เริ่มงานเรียบร้อย เปิดระบบคุ้มครองความปลอดภัยแล้ว');
-    } else {
-      alert('เริ่มงานเรียบร้อย (เปิดระบบคุ้มครอง)');
+      return true;
+    } catch (err) {
+      console.error('Error starting job:', err);
+      alert('เกิดข้อผิดพลาดในการเริ่มงาน กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
+      return false;
     }
+  };
 
-    setJobs((prev) =>
-      prev.map((j) => (j.id === bookingId ? { ...j, status: 'in_progress' } : j))
-    );
-  } catch (err) {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === bookingId ? { ...j, status: 'in_progress' } : j))
-    );
-    alert('เริ่มงานเรียบร้อย (เปิดระบบคุ้มครอง)');
-  }
-};
+  // Partner Action: Complete job
+  const handleCompleteJob = async (bookingId: string) => {
+    locallyCompletedRef.current.add(bookingId);
+    updateJobStatus(bookingId, 'completed');
+    try {
+      // NOTE: ตรวจสอบให้ตรงกับ endpoint จริงของ backend
+      const res = await fetch(`${API_URL}/api/bookings/${bookingId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) console.warn('Complete job responded', res.status);
+      onRefreshBookings?.();
+    } catch (err) {
+      console.warn('Complete job sync error:', err);
+    }
+  };
 
-  // Calculate earnings metrics
-  const completedJobs = jobs.filter((j: any) => j.status === 'completed');
-  const grossEarnings = completedJobs.reduce(
-    (acc: number, j: any) => acc + (j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : (j.totalPrice || 0) * 0.8)),
-    0
-  );
-  const totalWithholdingTax = grossEarnings * 0.03;
-  const netEarnings = grossEarnings - totalWithholdingTax;
+  /* ---------------- Derived data ---------------- */
+  const pendingJobs = jobs.filter((j) => PENDING_STATUSES.includes(j.status));
+  const confirmedJobs = jobs.filter((j) => CONFIRMED_STATUSES.includes(j.status));
+  
+// กรองเฉพาะงานที่มีสถานะเสร็จสิ้นแล้วของพาร์ทเนอร์คนนี้
+  const pPhone = userSession?.phone || userSession?.id || '0655397994';
+  
+  const completedJobsList = (jobs || []).filter((j: any) => {
+    const isCompletedStatus = j.status === 'completed' || j.escrowStatus === 'escrow_released';
+    const isThisPartner = j.partnerPhone === pPhone || j.partnerId === pPhone || j.partnerId === userSession?.id;
+    return isCompletedStatus && isThisPartner;
+  });
 
-  const currentActiveJob = jobs.find((j: any) => j.status === 'accepted' || j.status === 'in_progress') || null;
+  // คำนวณรายได้สะสมพร้อมโอน (Net Payout)
+  const totalNetEarnings = completedJobsList.reduce((sum: number, j: any) => {
+    const amount = Number(j.netPartnerPayout || j.partnerCutBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 * 0.97 : (j.totalCredits ? j.totalCredits * 0.8 * 0.97 : 0)));
+    return sum + amount;
+  }, 0);
 
-  // ฟังก์ชันดาวน์โหลดหนังสือรับรอง หัก ณ ที่จ่าย 50 ทวิ (รองรับมือถือ)
+  // คำนวณยอดรวมค่าบริการ (Gross 80%) และ ภาษีหัก ณ ที่จ่าย 3%
+  const totalGrossEarnings = completedJobsList.reduce((sum: number, j: any) => {
+    const gross = Number(j.partnerGross || j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : (j.totalCredits ? j.totalCredits * 0.8 : 0)));
+    return sum + gross;
+  }, 0);
+
+  const totalWithholdingTax = completedJobsList.reduce((sum: number, j: any) => {
+    const wht = Number(j.withholdingTax || j.withholdingTaxBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 * 0.03 : (j.totalCredits ? j.totalCredits * 0.8 * 0.03 : 0)));
+    return sum + wht;
+  }, 0);
+
+  const currentActiveJob =
+    confirmedJobs.find((j) => j.status === 'in_progress') || confirmedJobs[0] || null;
+  const trackingJob = activeTrackingJob || currentActiveJob;
+
+  const openTracking = (job: PartnerJob) => {
+    setActiveTrackingJob(job);
+    setIsTrackingOpen(true);
+  };
+
+  const handleCloseTracking = async () => {
+    const job = trackingJob;
+    setIsTrackingOpen(false);
+    setActiveTrackingJob(null);
+    if (!job) return;
+
+    // จบงานได้เฉพาะงานที่เริ่มแล้ว และต้องให้ผู้ใช้ยืนยัน
+    // (เดิมแค่ปิดแผนที่ก็ถือว่างานเสร็จ ทำให้ยอดรายได้เพี้ยน)
+    const latest = jobs.find((j) => j.id === job.id) || job;
+    if (latest.status !== 'in_progress') return;
+    if (!window.confirm('งานนี้เสร็จสิ้นแล้วใช่หรือไม่? (กดยกเลิกเพื่อกลับมาทำต่อภายหลัง)')) return;
+    await handleCompleteJob(latest.id);
+  };
+
+  /* ---------------- เอกสาร 50 ทวิ ---------------- */
   const handleDownloadTaxDoc = () => {
-    const partnerName = userSession?.name || 'พาร์ทเนอร์ Laysea';
-    const cleanPhone = userSession?.phone || '090-XXX-XXXX';
-    const grossVal = grossEarnings.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const taxVal = totalWithholdingTax.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const netVal = netEarnings.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+    const partnerName = displayName || 'พาร์ทเนอร์ Laysea';
+    const phoneLabel = partnerPhone || '-';
+    const today = new Date().toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
 
     const content = `===============================================================
        หนังสือรับรองการหักภาษี ณ ที่จ่าย (ตามมาตรา 50 ทวิ)
@@ -395,31 +601,31 @@ const handleStartProgress = async (bookingId: string) => {
 วันที่ออกเอกสาร: ${today}
 
 1. ผู้มีหน้าที่หักภาษี ณ ที่จ่าย (ผู้จ่ายเงิน):
-   ชื่อนิติบุคคล: บริษัท เลซี เอ็นเตอร์เทน จำกัด (LAYSEA ENTERTAIN PLATFORM CO., LTD.)
-   เลขประจำตัวผู้เสียภาษีอากร: 0205567012345
-   ที่อยู่: ชลบุรี ประเทศไทย
+   ชื่อนิติบุคคล: ${PAYER_INFO.nameTh} (${PAYER_INFO.nameEn})
+   เลขประจำตัวผู้เสียภาษีอากร: ${PAYER_INFO.taxId}
+   ที่อยู่: ${PAYER_INFO.address}
 
 2. ผู้ถูกหักภาษี ณ ที่จ่าย (พาร์ทเนอร์ผู้รับเงิน):
    ชื่อ-นามสกุล: ${partnerName}
-   หมายเลขโทรศัพท์ / บัญชีสมาชิก: ${cleanPhone}
+   หมายเลขโทรศัพท์ / บัญชีสมาชิก: ${phoneLabel}
 
 3. รายละเอียดการหักภาษี ณ ที่จ่าย:
    - ประเภทเงินได้: เงินได้พึงประเมินตามมาตรา 40(8) ค่าบริการและค่าดูแลสังสรรค์
-   - ยอดรวมค่าบริการสะสม (Gross 80%): ${grossVal} บาท
-   - ภาษีหัก ณ ที่จ่ายที่นำส่ง (3%): ${taxVal} บาท
-   - ยอดเงินสุทธิหลังหักภาษี (Net Payout): ${netVal} บาท
+   - ยอดรวมค่าบริการสะสม (Gross 80%): ${formatBaht(grossEarnings)} บาท
+   - ภาษีหัก ณ ที่จ่ายที่นำส่ง (3%): ${formatBaht(totalWithholdingTax)} บาท
+   - ยอดเงินสุทธิหลังหักภาษี (Net Payout): ${formatBaht(netEarnings)} บาท
 
 ---------------------------------------------------------------
 * เอกสารนี้สร้างจากระบบอิเล็กทรอนิกส์ Laysea Entertain Platform
 * พาร์ทเนอร์สามารถนำไปใช้เป็นหลักฐานยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91)
 ===============================================================`;
 
+    const safeName = partnerName.replace(/[\\/:*?"<>|]/g, '_');
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ใบ50ทวิ_${partnerName}.txt`;
-    link.target = '_blank';
+    link.download = `ใบ50ทวิ_${safeName}.txt`;
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
@@ -428,9 +634,13 @@ const handleStartProgress = async (bookingId: string) => {
     }, 100);
   };
 
+  /* ------------------------------------------------------------------ */
+  /* Render                                                              */
+  /* ------------------------------------------------------------------ */
+
   return (
     <div className="flex-1 flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
-{/* แถบแจ้งเตือนสถานะ KYC พาร์ทเนอร์ */}
+      {/* แถบแจ้งเตือนสถานะ KYC พาร์ทเนอร์ */}
       {isKycVerified ? (
         <div className="mx-4 mt-3 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -439,7 +649,9 @@ const handleStartProgress = async (bookingId: string) => {
               <p className="text-xs font-bold text-emerald-300 flex items-center gap-1">
                 ✓ ยืนยันตัวตนสำเร็จ (KYC & ประวัติอาชญากรรมผ่านแล้ว)
               </p>
-              <p className="text-[10px] text-slate-400">บัญชีของคุณเปิดรับงานและมีประกันคุ้มครองเต็มรูปแบบ</p>
+              <p className="text-[10px] text-slate-400">
+                บัญชีของคุณเปิดรับงานและมีประกันคุ้มครองเต็มรูปแบบ
+              </p>
             </div>
           </div>
           <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-xl text-[10px] font-bold">
@@ -452,15 +664,15 @@ const handleStartProgress = async (bookingId: string) => {
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
             <div>
               <p className="text-xs font-bold text-amber-300">
-                {kycStatus === 'pending_review' 
-                  ? 'สถานะ: กำลังรอแอดมินตรวจสอบประวัติอาชญากรรม' 
+                {kycStatus === 'pending_review'
+                  ? 'สถานะ: กำลังรอแอดมินตรวจสอบประวัติอาชญากรรม'
                   : kycStatus === 'rejected'
                   ? 'สถานะ: ใบสมัครไม่ผ่านการอนุมัติ โปรดยื่นใหม่'
                   : 'สถานะ: รอการยืนยันตัวตน (KYC)'}
               </p>
               <p className="text-[10px] text-slate-400">
-                {kycStatus === 'pending_review' 
-                  ? 'เจ้าหน้าที่กำลังตรวจประวัติกับสำนักงานตำรวจแห่งชาติ' 
+                {kycStatus === 'pending_review'
+                  ? 'เจ้าหน้าที่กำลังตรวจประวัติกับสำนักงานตำรวจแห่งชาติ'
                   : 'อัปโหลดบัตรประชาชนและรูปถ่ายเพื่อเปิดสิทธิ์รับงาน'}
               </p>
             </div>
@@ -476,6 +688,7 @@ const handleStartProgress = async (bookingId: string) => {
           )}
         </div>
       )}
+
       {/* Mobile Header for Partner */}
       <div className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
@@ -497,14 +710,16 @@ const handleStartProgress = async (bookingId: string) => {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-white text-xs truncate max-w-[120px]">
-                {userSession.name}
+                {displayName}
               </span>
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-0.2 rounded font-semibold flex items-center gap-0.5">
-                <ShieldCheck className="w-2.5 h-2.5" /> ตรวจประวัติแล้ว
-              </span>
+              {isKycVerified && (
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-0.5 rounded font-semibold flex items-center gap-0.5">
+                  <ShieldCheck className="w-2.5 h-2.5" /> ตรวจประวัติแล้ว
+                </span>
+              )}
             </div>
             <p className="text-[10px] text-slate-400">
-              สถานะ: ออนไลน์พร้อมรับงาน
+              {isKycVerified ? 'สถานะ: ออนไลน์พร้อมรับงาน' : 'สถานะ: รอการยืนยันตัวตน'}
             </p>
           </div>
         </div>
@@ -539,36 +754,48 @@ const handleStartProgress = async (bookingId: string) => {
         {/* TAB 1: JOBS / SCHEDULE */}
         {partnerTab === 'jobs' && (
           <div className="space-y-4">
-            {/* Pending Acceptance Requests (5-minute SLA timer) */}
-            {jobs.filter((j) => j.status === 'matched_pending' || j.status === 'pending' || j.status === 'waiting').map((job) => (
+            {/* Pending Acceptance Requests (5-minute SLA) */}
+            {pendingJobs.map((job) => (
               <div
                 key={job.id}
-                className="p-4 bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 rounded-2xl border-2 border-amber-500/60 space-y-3 shadow-lg animate-pulse"
+                className="p-4 bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 rounded-2xl border-2 border-amber-500/60 space-y-3 shadow-lg"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-amber-300 flex items-center gap-1">
-                    <Clock className="w-4 h-4 animate-spin" />
+                    <Clock className="w-4 h-4" />
                     <span>มีคำขอจ้างงานใหม่ (ตอบรับภายใน 5 นาที):</span>
                   </span>
                   <span className="text-xs font-bold text-white bg-amber-600/30 px-2 py-0.5 rounded-full border border-amber-500/40">
-                    {job.totalAmountBaht * 0.8} ฿ (รายได้)
+                    {formatBaht(getPartnerGross(job))} ฿ (รายได้)
                   </span>
                 </div>
 
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
                   <div className="font-bold text-white">{job.eventType}</div>
-                  <div className="text-slate-400">📅 วันที่: {job.date} เวลา {job.startTime} น. ({job.durationHours} ชม.)</div>
+                  <div className="text-slate-400">
+                    📅 วันที่: {job.date} เวลา {job.startTime} น. ({job.durationHours} ชม.)
+                  </div>
                   <div className="text-slate-400">📍 สถานที่: {job.location}</div>
-                  <div className="text-[11px] text-emerald-400 font-semibold">🔒 เงินลูกค้าพักในระบบ Escrow เรียบร้อยแล้ว</div>
+                  <div className="text-[11px] text-emerald-400 font-semibold">
+                    🔒 เงินลูกค้าพักในระบบ Escrow เรียบร้อยแล้ว
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => handleAcceptJob(job.id)}
-                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1"
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1"
                   >
                     <Check className="w-4 h-4" />
                     <span>ตอบรับงานนี้ (Accept Gig)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectJob(job.id)}
+                    className="flex-1 py-2.5 bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>✕ ปฏิเสธงาน</span>
                   </button>
                 </div>
               </div>
@@ -577,20 +804,27 @@ const handleStartProgress = async (bookingId: string) => {
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-white">ตารางงานที่ได้รับการยืนยัน:</span>
               <span className="text-emerald-400 font-semibold text-[11px]">
-                {jobs.filter((j) => j.status === 'accepted' || j.status === 'in_progress').length} งานวันนี้
+                {confirmedJobs.length} งาน
               </span>
             </div>
 
             {/* Confirmed / In-progress Jobs */}
-            {jobs.length === 0 ? (
+            {confirmedJobs.length === 0 ? (
               <div className="p-6 bg-slate-900/60 rounded-2xl border border-slate-800 text-center text-xs text-slate-400 space-y-1">
                 <Calendar className="w-7 h-7 text-slate-600 mx-auto mb-1" />
-                <p className="font-semibold text-slate-300">ยังไม่มีงานในสถานะดำเนินการขณะนี้</p>
-                <p className="text-[10px] text-slate-500">เมื่อลูกค้าสร้างนัดหมาย ระบบจะแจ้งเตือนพร้อมสิทธิประโยชน์ประกันอุบัติเหตุทันที</p>
+                <p className="font-semibold text-slate-300">
+                  {isLoadingJobs ? 'กำลังโหลดงาน...' : 'ยังไม่มีงานในสถานะดำเนินการขณะนี้'}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  เมื่อลูกค้าสร้างนัดหมาย ระบบจะแจ้งเตือนพร้อมสิทธิประโยชน์ประกันอุบัติเหตุทันที
+                </p>
               </div>
             ) : (
-              jobs.map((job) => (
-                <div key={job.id} className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+              confirmedJobs.map((job) => (
+                <div
+                  key={job.id}
+                  className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-3 shadow-md"
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -604,78 +838,75 @@ const handleStartProgress = async (bookingId: string) => {
                   <div className="text-xs text-slate-300 space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
                     <div className="flex items-center gap-2">
                       <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      <span>เวลา: {job.startTime} น. ({job.durationHours} ชั่วโมง)</span>
+                      <span>
+                        เวลา: {job.startTime} น. ({job.durationHours} ชั่วโมง)
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                       <span>สถานที่: {job.location}</span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
-                      <span>ลูกค้า: <strong className="text-white">{job.clientName}</strong></span>
-                      <span>เบอร์ติดต่อ: <strong className="text-rose-300 font-mono">{job.clientPhone}</strong></span>
+                      <span>
+                        ลูกค้า: <strong className="text-white">{job.clientName}</strong>
+                      </span>
+                      <span>
+                        เบอร์ติดต่อ:{' '}
+                        <strong className="text-rose-300 font-mono">{job.clientPhone}</strong>
+                      </span>
                     </div>
                   </div>
 
-                 {/* Actions for Partner */}
-            <div className="space-y-2">
-              {/* 1. กรณีงานใหม่ รอพาร์ทเนอร์กดรับงาน */}
-{(!job.status || job.status === 'pending' || job.status === 'matched_pending' || job.status === 'waiting') && (
-  <div className="flex gap-2 pt-2">
-    <button
-      type="button"
-      onClick={() => handleAcceptJob(job.id)}
-      className="flex-1 py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
-    >
-      <CheckCircle2 className="w-3.5 h-3.5" />
-      <span>✓ ยอมรับงาน</span>
-    </button>
-    <button
-      type="button"
-      onClick={() => handleRejectJob(job.id)}
-      className="flex-1 py-2.5 px-3 bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-    >
-      <span>✕ ปฏิเสธงาน</span>
-    </button>
-  </div>
-)}
+                  {/* Actions for Partner */}
+                  <div className="space-y-2">
+                    {(job.status === 'accepted' || job.status === 'confirmed') && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openTracking(job)}
+                          className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>📍 ดูพิกัดนัดเจอลูกค้า & แผนที่ความปลอดภัยสด</span>
+                        </button>
 
-              {/* 2. กรณีกดยอมรับแล้ว (accepted หรือ confirmed) ถึงจะแสดงปุ่มดูพิกัด และปุ่มเริ่มงาน */}
-              {(job.status === 'accepted' || job.status === 'confirmed') && (
-                <>
-                  <button
-                    onClick={() => {
-                      setActiveTrackingJob(job);
-                      setIsTrackingOpen(true);
-                    }}
-                    className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Navigation className="w-3.5 h-3.5 animate-spin" />
-                    <span>📍 ดูพิกัดนัดเจอลูกค้า & แผนที่ความปลอดภัยสด</span>
-                  </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const started = await handleStartProgress(job.id);
+                            if (started) openTracking({ ...job, status: 'in_progress' });
+                          }}
+                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>เริ่มงานแล้ว (เข้าพบลูกค้า & เปิดระบบคุ้มครอง)</span>
+                        </button>
+                      </>
+                    )}
 
-                  <button
-                  onClick={() => {
-                    handleStartProgress(job.id);
-                    setActiveTrackingJob(job);
-                    setIsTrackingOpen(true);
-                  }}
-                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>เริ่มงานแล้ว (เข้าพบลูกค้า & เปิดระบบคุ้มครอง)</span>
-                </button>
-                </>
-              )}
-            </div>
+                    {job.status === 'in_progress' && (
+                      <button
+                        type="button"
+                        onClick={() => openTracking(job)}
+                        className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Navigation className="w-3.5 h-3.5" />
+                        <span>เปิดแผนที่ความปลอดภัย / จบงาน</span>
+                      </button>
+                    )}
+                  </div>
 
                   <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
                     <div>
-                      <span className="text-[10px] text-slate-400">รายได้สุทธิหลังหักภาษี 3% (ม.3 เตรส):</span>
+                      <span className="text-[10px] text-slate-400">
+                        รายได้สุทธิหลังหักภาษี 3% (ม.3 เตรส):
+                      </span>
                       <div className="font-bold text-amber-300 text-sm">
-                        {(job.netPartnerPayoutBaht || job.totalAmountBaht * 0.8 * 0.97).toLocaleString()} บาท
+                        {formatBaht(getPartnerNet(job))} บาท
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => setIsSosOpen(true)}
                       className="px-2.5 py-1 bg-slate-800 hover:bg-red-950/40 text-red-300 border border-slate-700 hover:border-red-500/40 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                     >
@@ -711,13 +942,27 @@ const handleStartProgress = async (bookingId: string) => {
                 หากมีเหตุผิดปกติ คุณสามารถกดปุ่ม SOS เพื่อเรียกรถสายตรวจได้ทันที
               </p>
               <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-1">
-                <div>📍 <strong>พิกัดปัจจุบัน:</strong> 13.7367° N, 100.5606° E (ปทุมวัน/สยาม)</div>
+                <div>
+                  📍 <strong>พิกัดปัจจุบัน:</strong>{' '}
+                  {currentCoords
+                    ? `${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`
+                    : locationError
+                    ? 'ไม่สามารถระบุพิกัดได้ (กรุณาอนุญาตการเข้าถึงตำแหน่ง)'
+                    : 'กำลังระบุพิกัด...'}
+                </div>
                 <div>🛡️ <strong>ประกันอุบัติเหตุ:</strong> คุ้มครองเต็มวงเงิน 500,000 บาท</div>
                 <div>📞 <strong>สายด่วนฉุกเฉิน:</strong> 191 หรือ 02-LAYSEA-SOS</div>
               </div>
 
               <button
-                onClick={() => setIsTrackingOpen(true)}
+                type="button"
+                onClick={() => {
+                  if (!trackingJob) {
+                    alert('ยังไม่มีงานที่ยืนยันแล้ว จึงยังไม่สามารถเปิดแผนที่ติดตามได้');
+                    return;
+                  }
+                  setIsTrackingOpen(true);
+                }}
                 className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Navigation className="w-3.5 h-3.5" />
@@ -726,6 +971,7 @@ const handleStartProgress = async (bookingId: string) => {
             </div>
 
             <button
+              type="button"
               onClick={() => setIsSosOpen(true)}
               className="w-full py-3.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-xl text-xs font-black shadow-lg shadow-red-950/80 flex items-center justify-center gap-2 cursor-pointer"
             >
@@ -741,7 +987,7 @@ const handleStartProgress = async (bookingId: string) => {
             <div className="p-5 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 rounded-2xl border border-amber-500/40 text-center space-y-1">
               <span className="text-xs text-slate-400">รายได้สะสมสุทธิพร้อมโอน (Net Payout)</span>
               <div className="text-3xl font-black text-amber-300 font-['Plus_Jakarta_Sans']">
-                {netEarnings.toLocaleString()} ฿
+                {Math.round(totalNetEarnings).toLocaleString()} ฿
               </div>
               <p className="text-[10px] text-slate-400">
                 รอบโอนเงินอัตโนมัติเข้าบัญชีกสิกรไทย (KBANK) ทุกวันศุกร์
@@ -756,93 +1002,94 @@ const handleStartProgress = async (bookingId: string) => {
               </div>
               <div className="flex justify-between text-slate-400 text-[11px]">
                 <span>ยอดรวมค่าบริการ (Gross 80%):</span>
-                <span className="text-slate-200">{grossEarnings.toLocaleString()} บาท</span>
+                <span className="text-slate-200">{Math.round(totalGrossEarnings).toLocaleString()} บาท</span>
               </div>
               <div className="flex justify-between text-slate-400 text-[11px]">
                 <span>ภาษีหัก ณ ที่จ่าย 3% (ม.3 เตรส):</span>
-                <span className="text-rose-400 font-semibold">-{totalWithholdingTax.toLocaleString()} บาท</span>
+                <span className="text-rose-400 font-semibold">
+                  -{Math.round(totalWithholdingTax).toLocaleString()} บาท
+                </span>
               </div>
               <div className="flex justify-between text-slate-200 font-bold text-xs pt-1.5 border-t border-slate-800">
                 <span>ยอดเงินจ่ายสุทธิ (Net Payout):</span>
-                <span className="text-amber-300">{netEarnings.toLocaleString()} บาท</span>
+                <span className="text-amber-300">{Math.round(totalNetEarnings).toLocaleString()} บาท</span>
               </div>
 
               {/* ปุ่มดูและปุ่มดาวน์โหลดเอกสาร */}
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => setShowWithholdingCertModal(true)}
-              className="py-2 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-400" />
-              <span>ดูตัวอย่างใบ 50 ทวิ</span>
-            </button>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowWithholdingCertModal(true)}
+                  className="py-2 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <span>ดูตัวอย่างใบ 50 ทวิ</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={handleDownloadTaxDoc}
-              className="py-2 px-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-            >
-              <span>📥 ดาวน์โหลดเอกสาร</span>
-            </button>
-          </div>
-        </div>
-{/* ประวัติรายการรับงาน & รายได้รายวัน */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <span className="text-sm font-bold text-slate-200">ประวัติรับงาน & รายได้ที่เสร็จสิ้น</span>
-              <span className="text-xs text-slate-400">
-                {jobs.filter((j) => j.status === 'completed').length > 0 
-                  ? `${jobs.filter((j) => j.status === 'completed').length} รายการ` 
-                  : 'ยังไม่มีประวัติงาน'}
-              </span>
+                <button
+                  type="button"
+                  onClick={handleDownloadTaxDoc}
+                  className="py-2 px-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <span>📥 ดาวน์โหลดเอกสาร</span>
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-          {jobs.filter((j) => j.status === 'completed').length > 0 ? (
-            jobs
-              .filter((j) => j.status === 'completed')
-              .map((j) => {
-                const gross = j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : 0);
-                const net = j.netPartnerPayoutBaht || gross * 0.97;
-                return (
-                  <div key={j.id} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                        {j.eventType || 'เพื่อนดูแล / สังสรรค์'}
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        📅 วันที่: {j.date || new Date().toLocaleDateString('th-TH')} • {j.durationHours || 2} ชม.
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        ลูกค้า: {j.clientName || j.customerName || 'ลูกค้า Laysea'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-xs text-amber-300">
-                        +{net.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
-                      </div>
-                      <div className="text-[9px] text-slate-400">(หัก 3% แล้ว)</div>
-                      <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
-                        เสร็จสิ้น
-                      </span>
-                    </div>
+            {/* ประวัติรายการรับงาน & รายได้ */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <span className="text-sm font-bold text-slate-200">
+                  ประวัติรับงาน & รายได้ที่เสร็จสิ้น
+                </span>
+                <span className="text-xs text-slate-400">
+                  {completedJobsList.length > 0
+                                         ? `${completedJobsList.length} รายการ`
+                                         : 'ยังไม่มีประวัติงาน'}
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {completedJobsList.length > 0 ? (
+            completedJobsList.map((j: any) => (
+              <div 
+                key={j.id || j.bookingId} 
+                className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between"
+              >
+                <div>
+                  <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                    <span>{j.eventType || 'งานนัดหมาย'}</span>
                   </div>
-                );
-              })
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    📅 วันที่: {j.date || '-'} · {j.durationHours} ชม.
+                  </div>
+                  <div className="text-[10px] text-slate-500">ลูกค้า: {j.clientName || 'ลูกค้า Laysea'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-xs text-amber-300">
+                    +{Math.round(Number(j.netPartnerPayout || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 * 0.97 : (j.totalCredits ? j.totalCredits * 0.8 * 0.97 : 0)))).toLocaleString()} ฿
+                  </div>
+                  <div className="text-[9px] text-slate-400">(หัก 3% แล้ว)</div>
+                  <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
+                    โอนเข้าแล้ว
+                  </span>
+                </div>
+              </div>
+            ))
           ) : (
-            <div className="py-6 text-center text-xs text-slate-500">
+            <div className="text-center py-6 text-xs text-slate-500">
               ยังไม่มีประวัติงานที่เสร็จสิ้น
             </div>
           )}
-        </div>        
-      </div>
+              </div>
+            </div>
 
             <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
               <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
               <p>
-                แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
+                แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง
+                ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
               </p>
             </div>
           </div>
@@ -858,7 +1105,11 @@ const handleStartProgress = async (bookingId: string) => {
                   className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-amber-500/60 bg-slate-800 flex items-center justify-center cursor-pointer group shrink-0"
                 >
                   {userSession.avatarUrl ? (
-                    <img src={userSession.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    <img
+                      src={userSession.avatarUrl}
+                      alt="Avatar"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <User className="w-8 h-8 text-amber-400" />
                   )}
@@ -869,70 +1120,83 @@ const handleStartProgress = async (bookingId: string) => {
 
                 <div className="flex-1">
                   {isEditingName ? (
-  <div className="flex items-center gap-1.5 mb-1">
-    <input
-      type="text"
-      value={editNameVal}
-      onChange={(e) => setEditNameVal(e.target.value)}
-      className="bg-slate-800 text-white px-2 py-0.5 rounded text-xs border border-rose-500/50 outline-none w-28"
-      placeholder="ชื่อพาร์ทเนอร์"
-      autoFocus
-    />
-    <button
-      type="button"
-      onClick={handleSavePartnerName}
-      className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded font-bold cursor-pointer"
-    >
-      บันทึก
-    </button>
-    <button
-      type="button"
-      onClick={() => setIsEditingName(false)}
-      className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] px-2 py-0.5 rounded cursor-pointer"
-    >
-      ยกเลิก
-    </button>
-  </div>
-) : (
-  <div className="flex items-center gap-2">
-    <h3 className="font-bold text-white text-sm">{userSession?.name || 'Laysea'}</h3>
-    <button
-      type="button"
-      onClick={() => {
-        setEditNameVal(userSession?.name || 'Laysea');
-        setIsEditingName(true);
-      }}
-      className="text-rose-400 hover:text-rose-300 text-[11px] underline cursor-pointer"
-    >
-      ✏️ แก้ไขชื่อ
-    </button>
-  </div>
-)}
-                  <div className="text-xs text-rose-400">เรตติ้ง 4.96 ★ (142 รีวิว)</div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <input
+                        type="text"
+                        value={editNameVal}
+                        onChange={(e) => setEditNameVal(e.target.value)}
+                        className="bg-slate-800 text-white px-2 py-0.5 rounded text-xs border border-rose-500/50 outline-none w-28"
+                        placeholder="ชื่อพาร์ทเนอร์"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSavePartnerName}
+                        disabled={isSavingName}
+                        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-[11px] px-2 py-0.5 rounded font-bold cursor-pointer"
+                      >
+                        {isSavingName ? 'กำลังบันทึก...' : 'บันทึก'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingName(false)}
+                        disabled={isSavingName}
+                        className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] px-2 py-0.5 rounded cursor-pointer"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white text-sm">{displayName || 'Laysea'}</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditNameVal(displayName || '');
+                          setIsEditingName(true);
+                        }}
+                        className="text-rose-400 hover:text-rose-300 text-[11px] underline cursor-pointer"
+                      >
+                        ✏️ แก้ไขชื่อ
+                      </button>
+                    </div>
+                  )}
+                  <div className="text-xs text-rose-400">
+                    {userSession?.rating ? `เรตติ้ง ${userSession.rating} ★` : 'ยังไม่มีเรตติ้ง'}
+                  </div>
                   <div className="flex items-center gap-1 text-[11px] text-emerald-400 mt-1">
                     <Phone className="w-3 h-3" />
-                    <span>เบอร์ยืนยันแล้ว: {userSession.phone}</span>
+                    <span>เบอร์ยืนยันแล้ว: {userSession.phone || partnerPhone || '-'}</span>
                   </div>
                 </div>
               </div>
-{/* ช่องจัดการอัลบั้มรูปภาพผลงาน 1-6 รูป */}
+
+              {/* ช่องจัดการอัลบั้มรูปภาพผลงาน 1-6 รูป */}
               <div className="pt-3 border-t border-slate-800">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs font-bold text-white flex items-center gap-1">
-                    📸 อัลบั้มรูปผลงาน/ไลฟ์สไตล์ (1-6 รูป)
+                    📸 อัลบั้มรูปผลงาน/ไลฟ์สไตล์ (1-{MAX_GALLERY_IMAGES} รูป)
                   </span>
                   <span className="text-[11px] text-rose-400 font-medium">
-                    {galleryImages.length} / 6 รูป
+                    {galleryImages.length} / {MAX_GALLERY_IMAGES} รูป
                   </span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   {galleryImages.map((img, idx) => (
-                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
-                      <img src={img} alt={`ผลงาน ${idx + 1}`} className="w-full h-full object-cover" />
+                    <div
+                      key={`${img}-${idx}`}
+                      className="relative aspect-square rounded-xl overflow-hidden border border-slate-700 bg-slate-950"
+                    >
+                      <img
+                        src={img}
+                        alt={`ผลงาน ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                      />
                       <button
                         type="button"
                         onClick={() => handleRemoveGalleryImage(idx)}
+                        disabled={isUploadingGallery}
                         className="absolute top-1 right-1 bg-red-600/90 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md active:scale-95"
                       >
                         ✕
@@ -940,14 +1204,23 @@ const handleStartProgress = async (bookingId: string) => {
                     </div>
                   ))}
 
-                  {galleryImages.length < 6 && (
-                    <label className="aspect-square rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-rose-500 hover:text-rose-400 cursor-pointer bg-slate-800/40 active:scale-95 transition">
-                      <span className="text-2xl font-light leading-none">+</span>
-                      <span className="text-[10px] mt-1">เพิ่มรูป</span>
+                  {galleryImages.length < MAX_GALLERY_IMAGES && (
+                    <label
+                      className={`aspect-square rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-rose-500 hover:text-rose-400 bg-slate-800/40 active:scale-95 transition ${
+                        isUploadingGallery ? 'opacity-60 pointer-events-none' : 'cursor-pointer'
+                      }`}
+                    >
+                      <span className="text-2xl font-light leading-none">
+                        {isUploadingGallery ? '…' : '+'}
+                      </span>
+                      <span className="text-[10px] mt-1">
+                        {isUploadingGallery ? 'กำลังอัปโหลด' : 'เพิ่มรูป'}
+                      </span>
                       <input
                         type="file"
                         accept="image/*"
                         className="hidden"
+                        disabled={isUploadingGallery}
                         onChange={handleUploadGalleryImage}
                       />
                     </label>
@@ -957,6 +1230,7 @@ const handleStartProgress = async (bookingId: string) => {
 
               <div className="pt-2 border-t border-slate-800 space-y-2">
                 <button
+                  type="button"
                   onClick={() => setIsEditAvatarOpen(true)}
                   className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
@@ -965,6 +1239,7 @@ const handleStartProgress = async (bookingId: string) => {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setShowPrivacyModal(true)}
                   className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
@@ -981,7 +1256,8 @@ const handleStartProgress = async (bookingId: string) => {
                 <span>พื้นที่จัดการบัญชี (Danger Zone)</span>
               </h4>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA) ท่านมีสิทธิ์ขอให้ลบและทำลายข้อมูลผู้ใช้ ประวัติการทำงาน และข้อมูลบัญชีธนาคารทั้งหมดอย่างถาวร
+                ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA) ท่านมีสิทธิ์ขอให้ลบและทำลายข้อมูลผู้ใช้
+                ประวัติการทำงาน และข้อมูลบัญชีธนาคารทั้งหมดอย่างถาวร
               </p>
               <button
                 type="button"
@@ -999,6 +1275,7 @@ const handleStartProgress = async (bookingId: string) => {
       {/* Bottom Navigation for Partner */}
       <div className="bg-slate-900 border-t border-slate-800 grid grid-cols-4 p-1.5 shrink-0">
         <button
+          type="button"
           onClick={() => setPartnerTab('jobs')}
           className={`flex flex-col items-center py-1 text-[10px] font-medium transition-colors cursor-pointer ${
             partnerTab === 'jobs' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
@@ -1009,6 +1286,7 @@ const handleStartProgress = async (bookingId: string) => {
         </button>
 
         <button
+          type="button"
           onClick={() => setPartnerTab('safety')}
           className={`flex flex-col items-center py-1 text-[10px] font-medium transition-colors cursor-pointer ${
             partnerTab === 'safety' ? 'text-rose-400 font-bold' : 'text-slate-400 hover:text-slate-200'
@@ -1019,6 +1297,7 @@ const handleStartProgress = async (bookingId: string) => {
         </button>
 
         <button
+          type="button"
           onClick={() => setPartnerTab('earnings')}
           className={`flex flex-col items-center py-1 text-[10px] font-medium transition-colors cursor-pointer ${
             partnerTab === 'earnings' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
@@ -1029,6 +1308,7 @@ const handleStartProgress = async (bookingId: string) => {
         </button>
 
         <button
+          type="button"
           onClick={() => setPartnerTab('profile')}
           className={`flex flex-col items-center py-1 text-[10px] font-medium transition-colors cursor-pointer ${
             partnerTab === 'profile' ? 'text-white font-bold' : 'text-slate-400 hover:text-slate-200'
@@ -1046,9 +1326,12 @@ const handleStartProgress = async (bookingId: string) => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-white text-sm">หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</h3>
+                <h3 className="font-bold text-white text-sm">
+                  หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)
+                </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowWithholdingCertModal(false)}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
               >
@@ -1060,40 +1343,44 @@ const handleStartProgress = async (bookingId: string) => {
               <div className="text-[10px] text-amber-300 font-semibold text-center border-b border-slate-800 pb-1.5">
                 ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร (ภ.ง.ด. 3)
               </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>ผู้จ่ายเงิน:</span>
-                <span className="text-white">บจก. เลย์ซี เอ็นเตอร์เทนเมนต์ (0105567089123)</span>
+              <div className="flex justify-between gap-2 text-slate-400 text-[11px]">
+                <span className="shrink-0">ผู้จ่ายเงิน:</span>
+                <span className="text-white text-right">
+                  {PAYER_INFO.nameTh} ({PAYER_INFO.taxId})
+                </span>
               </div>
               <div className="flex justify-between text-slate-400 text-[11px]">
                 <span>ผู้มีเงินได้:</span>
-                <span className="text-rose-300 font-bold">{userSession.name}</span>
+                <span className="text-rose-300 font-bold">{displayName}</span>
               </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>ประเภทเงินได้:</span>
-                <span className="text-slate-200">ค่าจ้างทำงาน/บริการ (มาตรา 40(8) และ 3 เตรส)</span>
+              <div className="flex justify-between gap-2 text-slate-400 text-[11px]">
+                <span className="shrink-0">ประเภทเงินได้:</span>
+                <span className="text-slate-200 text-right">
+                  ค่าจ้างทำงาน/บริการ (มาตรา 40(8) และ 3 เตรส)
+                </span>
               </div>
               <div className="flex justify-between text-slate-400 text-[11px] pt-1 border-t border-slate-800">
                 <span>จำนวนเงินที่จ่ายรวม (Gross):</span>
-                <span className="text-white font-bold">{grossEarnings.toLocaleString()} บาท</span>
+                <span className="text-white font-bold">{formatBaht(grossEarnings)} บาท</span>
               </div>
               <div className="flex justify-between text-slate-400 text-[11px]">
                 <span>ภาษีหัก ณ ที่จ่าย 3%:</span>
-                <span className="text-rose-400 font-bold">{totalWithholdingTax.toLocaleString()} บาท</span>
+                <span className="text-rose-400 font-bold">{formatBaht(totalWithholdingTax)} บาท</span>
               </div>
               <div className="flex justify-between text-slate-400 text-[11px]">
                 <span>จำนวนเงินจ่ายสุทธิ:</span>
-                <span className="text-amber-300 font-bold">{netEarnings.toLocaleString()} บาท</span>
+                <span className="text-amber-300 font-bold">{formatBaht(netEarnings)} บาท</span>
               </div>
             </div>
 
- <button
-  type="button"
-  onClick={handleDownloadTaxDoc}
-  className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1.5"
->
-  <Download className="w-4 h-4" />
-  <span>ดาวน์โหลดเอกสาร 50 ทวิ</span>
-</button>
+            <button
+              type="button"
+              onClick={handleDownloadTaxDoc}
+              className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Download className="w-4 h-4" />
+              <span>ดาวน์โหลดเอกสาร 50 ทวิ</span>
+            </button>
           </div>
         </div>
       )}
@@ -1111,48 +1398,41 @@ const handleStartProgress = async (bookingId: string) => {
       )}
 
       {/* Live Tracking Modal */}
-      {isTrackingOpen && currentActiveJob && (
+      {isTrackingOpen && trackingJob && (
         <LiveTrackingModal
-          booking={activeTrackingJob || currentActiveJob}
+          booking={trackingJob}
           currentUserRole="partner"
-          onClose={() => {
-            setIsTrackingOpen(false);
-            setActiveTrackingJob(null);
-            // อัปเดตสถานะเป็น completed เพื่อให้งานวิ่งมาโชว์ในกล่องประวัติ
-const finishedJobId = activeTrackingJob?.id || currentActiveJob?.id;
-setJobs((prev) => prev.map((j) => j.id === finishedJobId ? { ...j, status: 'completed' } : j));
-          }}
+          onClose={handleCloseTracking}
           onOpenSos={() => setIsSosOpen(true)}
         />
       )}
 
       {/* Avatar Modal */}
-      {isEditAvatarOpen && onUpdateAvatar && (
+      {isEditAvatarOpen && (
         <AvatarUploadModal
           currentAvatarUrl={userSession.avatarUrl}
           userRole="partner"
           onClose={() => setIsEditAvatarOpen(false)}
           onSaveAvatar={async (url) => {
-        onUpdateAvatar(url);
-        setIsEditAvatarOpen(false);
-        try {
-          const db = getFirestore(app);
-          const partnerPhone = userSession.phone || '0812345678';
-          await setDoc(doc(db, 'partners', partnerPhone), {
-            avatar: url,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch (err) {
-          console.error('Save partner avatar to firestore error:', err);
-        }
-      }}
+            onUpdateAvatar?.(url);
+            setIsEditAvatarOpen(false);
+            if (!partnerPhone) return;
+            try {
+              const db = getFirestore(app);
+              await setDoc(
+                doc(db, 'partners', partnerPhone),
+                { avatar: url, updatedAt: new Date().toISOString() },
+                { merge: true }
+              );
+            } catch (err) {
+              console.error('Save partner avatar to firestore error:', err);
+            }
+          }}
         />
       )}
 
       {/* Privacy Policy Modal */}
-      {showPrivacyModal && (
-        <PrivacyPolicyModal onClose={() => setShowPrivacyModal(false)} />
-      )}
+      {showPrivacyModal && <PrivacyPolicyModal onClose={() => setShowPrivacyModal(false)} />}
 
       {/* Delete Account Modal */}
       {showDeleteConfirmModal && (
@@ -1163,7 +1443,8 @@ setJobs((prev) => prev.map((j) => j.id === finishedJobId ? { ...j, status: 'comp
               <h3 className="font-bold text-sm text-white">ยืนยันลบบัญชีและข้อมูลผู้ใช้</h3>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              การกระทำนี้จะลบข้อมูลประวัติการทำงาน ยอดเงิน และข้อมูลส่วนบุคคลทั้งหมดตามสิทธิ์ PDPA อย่างถาวรและไม่สามารถกู้คืนได้
+              การกระทำนี้จะลบข้อมูลประวัติการทำงาน ยอดเงิน และข้อมูลส่วนบุคคลทั้งหมดตามสิทธิ์ PDPA
+              อย่างถาวรและไม่สามารถกู้คืนได้
             </p>
             <div className="flex gap-2">
               <button
@@ -1177,7 +1458,11 @@ setJobs((prev) => prev.map((j) => j.id === finishedJobId ? { ...j, status: 'comp
                 type="button"
                 onClick={() => {
                   setShowDeleteConfirmModal(false);
-                  if (onDeleteAccount) onDeleteAccount();
+                  if (onDeleteAccount) {
+                    onDeleteAccount();
+                  } else {
+                    alert('ไม่สามารถลบบัญชีได้ในขณะนี้ กรุณาติดต่อเจ้าหน้าที่');
+                  }
                 }}
                 className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
               >
@@ -1187,13 +1472,15 @@ setJobs((prev) => prev.map((j) => j.id === finishedJobId ? { ...j, status: 'comp
           </div>
         </div>
       )}
-{/* Modal ยื่นเอกสารบัตรประชาชน */}
+
+      {/* Modal ยื่นเอกสารบัตรประชาชน */}
       {showKycModal && (
         <KycModal
           userSession={userSession}
           onClose={() => setShowKycModal(false)}
           onSuccess={() => {
             setShowKycModal(false);
+            setKycStatus('pending_review');
             alert('🎉 ยื่นเอกสาร KYC สำเร็จแล้ว เจ้าหน้าที่จะตรวจสอบและอนุมัติภายใน 24 ชม.');
           }}
         />
