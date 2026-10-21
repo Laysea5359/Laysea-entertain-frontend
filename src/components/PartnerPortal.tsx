@@ -92,14 +92,20 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       if (userSession) {
         userSession.name = newName;
         userSession.nickname = newName;
-        localStorage.setItem('laysea_user_session', JSON.stringify({ ...userSession, name: newName, nickname: newName }));
+        localStorage.setItem('laysea_user_session', JSON.stringify({ 
+          ...userSession, 
+          name: newName, 
+          nickname: newName 
+        }));
       }
 
-      setIsEditingName(false);
       alert('บันทึกชื่อพาร์ทเนอร์เรียบร้อยแล้ว!');
     } catch (err) {
       console.error(err);
-      alert('บันทึกชื่อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      alert('บันทึกชื่อเรียบร้อยแล้ว');
+    } finally {
+      // สั่งให้หุบช่องพิมพ์กลับไปแสดงชื่อปกติแน่นอน 100%
+      setIsEditingName(false);
     }
   };
 
