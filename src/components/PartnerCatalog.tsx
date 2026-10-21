@@ -11,8 +11,17 @@ import {
   Wine,
   Award,
 } from 'lucide-react';
-import { Partner, LgbtqSubtype } from '../types';
-import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
+import { Partner, LgbtqSubtype, UserSession } from '../types';
+import {
+  getFirestore,
+  collection,
+  onSnapshot,
+  query,
+  where,
+  getDocs,
+  doc,
+  setDoc,
+} from 'firebase/firestore';
 import { app } from '../firebase';
 
 /* ------------------------------------------------------------------ */
@@ -24,6 +33,7 @@ interface PartnerCatalogProps {
   onSelectVdoCall: (partner: Partner) => void;
   onSelectBook: (partner: Partner) => void;
   onOpenAiMatching: () => void;
+  userSession?: UserSession;
 }
 
 type CatalogPartner = Partner & Record<string, any>;
@@ -140,8 +150,8 @@ const matchesGender = (p: CatalogPartner, gender: GenderFilter, sub: 'all' | Lgb
   return g === gender;
 };
 
-const matchesSearch = (p: CatalogPartner, query: string) => {
-  const q = query.trim().toLowerCase();
+const matchesSearch = (p: CatalogPartner, searchText: string) => {
+  const q = searchText.trim().toLowerCase();
   if (!q) return true;
   const fields = [p.name, p.nickname, p.location, p.bio].map((v) => String(v || '').toLowerCase());
   const skillsMatch =
@@ -172,6 +182,7 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
   onSelectVdoCall,
   onSelectBook,
   onOpenAiMatching,
+  userSession,
 }) => {
   const [selectedGender, setSelectedGender] = useState<GenderFilter>('all');
   const [selectedLgbtqSubtype, setSelectedLgbtqSubtype] = useState<'all' | LgbtqSubtype>('all');
@@ -187,6 +198,7 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
   // อัลบั้มรูป 1-6 รูป
   const [galleryPartner, setGalleryPartner] = useState<CatalogPartner | null>(null);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
+  const [reviewingPartnerId, setReviewingPartnerId] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -295,6 +307,66 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
   // ให้ key handler เรียกเวอร์ชันล่าสุดของ stepGallery เสมอ
   const stepGalleryRef = React.useRef(stepGallery);
   stepGalleryRef.current = stepGallery;
+
+  /* ---------- Review ---------- */
+  const handleReviewPartner = async (p: CatalogPartner) => {
+    const clientId = userSession?.id || userSession?.phone;
+    if (!clientId) {
+      alert('กรุณาเข้าสู่ระบบในฐานะลูกค้าก่อนให้รีวิว');
+      return;
+    }
+    if (reviewingPartnerId) return;
+
+    setReviewingPartnerId(p.id);
+    try {
+      const db = getFirestore(app);
+
+      // รีวิวได้เฉพาะพาร์ทเนอร์ที่เคยใช้บริการและงานเสร็จสิ้นแล้ว
+      const completed = await getDocs(
+        query(
+          collection(db, 'bookings'),
+          where('clientId', '==', clientId),
+          where('partnerId', '==', p.id),
+          where('status', '==', 'completed')
+        )
+      );
+      if (completed.empty) {
+        alert('คุณสามารถรีวิวได้เฉพาะพาร์ทเนอร์ที่เคยใช้บริการและงานเสร็จสิ้นแล้วเท่านั้น');
+        return;
+      }
+
+      const scoreInput = prompt('ให้คะแนนความประทับใจ (1-5 ดาว):');
+      if (scoreInput === null) return;
+      const score = Number(scoreInput);
+      if (!Number.isInteger(score) || score < 1 || score > 5) {
+        alert('กรุณาระบุคะแนนเป็นจำนวนเต็ม 1-5');
+        return;
+      }
+
+      const commentInput = prompt('เขียนรีวิวความประทับใจ (ไม่บังคับ):');
+      if (commentInput === null) return;
+
+      // 1 ลูกค้า : 1 รีวิวต่อพาร์ทเนอร์ (รีวิวซ้ำจะอัปเดตของเดิม ไม่เพิ่มจำนวนรีวิว)
+      await setDoc(
+        doc(db, 'partner_reviews', `${p.id}_${clientId}`),
+        {
+          partnerId: p.id,
+          clientId,
+          clientName: userSession?.name || '',
+          rating: score,
+          comment: commentInput.trim(),
+          createdAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      alert('ขอบคุณสำหรับรีวิวของคุณ!');
+    } catch (err) {
+      console.error('Submit review error:', err);
+      alert('ส่งรีวิวไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setReviewingPartnerId(null);
+    }
+  };
 
   const genderButtonClass = (active: boolean) =>
     `py-2 px-2 text-center rounded-lg font-medium transition-all cursor-pointer ${
@@ -646,83 +718,28 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
                         <span>VDO Call</span>
                       </button>
                       <button
-                type="button"
-                  onClick={() => onSelectBook(p)}
-                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-rose-900/20 transition-all active:scale-95"
->
-               <Calendar className="w-3.5 h-3.5" />
-               <span>จองเลย</span>   
-<>
-          <div className="grid grid-cols-2 gap-2">
-            {/* ปุ่ม VDO Call */}
-            <button
-              type="button"
-              onClick={() => onSelectVdoCall(p)}
-              className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Video className="w-3.5 h-3.5 text-rose-400" />
-              <span>VDO Call</span>
-            </button>
-
-            {/* ปุ่มจองเลย */}
-            <button
-              type="button"
-              onClick={() => onSelectBook(p)}
-              className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-rose-900/20"
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>จองเลย</span>
-            </button>
-          </div>
-
-          {/* ปุ่มรีวิวพาร์ทเนอร์ */}
-          <div className="pt-2 border-t border-slate-800 mt-2">
-            <button
-              type="button"
-              onClick={async () => {
-                const clientId = userSession?.id || userSession?.phone;
-                if (!clientId) {
-                  alert('กรุณาเข้าสู่ระบบในฐานะลูกค้าก่อนให้รีวิว');
-                  return;
-                }
-
-                const db = getFirestore(app);
-                const q = query(
-                  collection(db, 'bookings'),
-                  where('clientId', '==', clientId),
-                  where('partnerId', '==', p.id),
-                  where('status', '==', 'completed')
-                );
-                
-                const querySnapshot = await getDocs(q);
-                if (querySnapshot.empty) {
-                  alert('คุณสามารถรีวิวได้เฉพาะพาร์ทเนอร์ที่เคยใช้บริการและงานเสร็จสิ้นแล้วเท่านั้น');
-                  return;
-                }
-
-                const score = prompt('ให้คะแนนความประทับใจ (1-5 ดาว):', '5');
-                const comment = prompt('เขียนรีวิวความประทับใจ:', 'บริการดีมาก สุภาพ ตรงปกครับ');
-                
-                if (score && !isNaN(Number(score))) {
-                  await setDoc(doc(db, 'partner_reviews', `${p.id}_${clientId}_${Date.now()}`), {
-                    partnerId: p.id,
-                    clientId: clientId,
-                    clientName: userSession?.name || 'ลูกค้าผู้ใช้บริการ',
-                    rating: Number(score),
-                    comment: comment,
-                    createdAt: new Date().toISOString()
-                  }, { merge: true });
-
-                  alert('ขอบคุณสำหรับรีวิวของคุณครับ!');
-                }
-              }}
-              className="w-full py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-            >
-              <span>⭐ เขียนรีวิวพาร์ทเนอร์</span>
-            </button>
-          </div>
-        </>
+                        type="button"
+                        onClick={() => onSelectBook(p)}
+                        disabled={!hasRate}
+                        title={hasRate ? undefined : 'พาร์ทเนอร์ยังไม่ได้ระบุราคา'}
+                        className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>จองเลย</span>
+                      </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleReviewPartner(p)}
+                      disabled={reviewingPartnerId === p.id}
+                      className="w-full py-1.5 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Star className="w-3.5 h-3.5" />
+                      <span>
+                        {reviewingPartnerId === p.id ? 'กำลังตรวจสอบ...' : 'เขียนรีวิวพาร์ทเนอร์'}
+                      </span>
+                    </button>
                   </div>
                 </div>
               </div>

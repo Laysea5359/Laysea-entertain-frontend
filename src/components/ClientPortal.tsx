@@ -247,6 +247,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
             onSelectVdoCall={(p) => setSelectedVdoPartner(p)}
             onSelectBook={(p) => setSelectedBookingPartner(p)}
             onOpenAiMatching={() => setClientTab('ai-manager')}
+            userSession={userSession}
           />
         )}
 
