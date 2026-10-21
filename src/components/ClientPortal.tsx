@@ -95,8 +95,8 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
     }
 
     try {
-      // 1. ส่งข้อมูลไปอัปเดตที่ Backend Render (จะบันทึกลง MongoDB Atlas และ Firestore ให้ทันที)
-      const res = await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
+      // 1. ส่งข้อมูลไปอัปเดตที่ Backend Render
+      await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,6 +116,9 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
 
       alert('บันทึกชื่อสำเร็จเรียบร้อยแล้ว!');
       setIsEditingName(false);
+    } catch (err: any) {
+      console.error('Error saving name:', err);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
     }
   };
 
