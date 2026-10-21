@@ -46,7 +46,7 @@ useEffect(() => {
     // ฟังก์ชันแปลงข้อมูลดิบให้เป็นการ์ดพาร์ทเนอร์
     const mapAndSetPartners = (rawList: any[]) => {
       const formatted = rawList.map((d: any) => {
-        const mainPhoto = d.avatar || d.imageUrl || (Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery[0] : '');
+        const mainPhoto = d.avatarUrl1 || d.avatar || d.imageUrl || d.photoFace || (Array.isArray(d.gallery) && d.gallery.length > 0 ? d.gallery[0] : '');
         return {
           id: d._id || d.id,
           name: d.name || d.nickname || 'พาร์ทเนอร์ Laysea',
