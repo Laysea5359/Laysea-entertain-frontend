@@ -352,6 +352,6 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
             </button>
           ))}
         </div>
-      </div>
+
    
      
