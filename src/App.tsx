@@ -61,6 +61,46 @@ export default function App() {
     return () => clearInterval(interval);
   }, [userSession]);
 
+// ดึงรายชื่อพาร์ทเนอร์ตัวจริงจาก Cloud (Backend Render / MongoDB / Firestore)
+  useEffect(() => {
+    const fetchRealPartners = async () => {
+      try {
+        const res = await fetch('https://laysea-entertain-backend-1.onrender.com/api/partners');
+        if (res.ok) {
+          const data = await res.json();
+          const list = data.partners || data.data;
+          if (Array.isArray(list) && list.length > 0) {
+            setPartners(list);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend partners fetch failed, fallback to local/storage');
+      }
+
+      // เช็คข้อมูลพาร์ทเนอร์ที่เพิ่งล็อกอิน/อัปโหลดล่าสุด
+      try {
+        const savedGallery = localStorage.getItem('laysea_partner_gallery') || localStorage.getItem('gallery_0655397994');
+        const sessionUser = localStorage.getItem('laysea_user_session');
+        if (savedGallery && sessionUser) {
+          const u = JSON.parse(sessionUser);
+          const g = JSON.parse(savedGallery);
+          if (u.role === 'partner' || u.phone === '0655397994') {
+            setPartners((prev) =>
+              prev.map((p) =>
+                p.phone === u.phone || p.id === u.id || p.phone === '0655397994'
+                  ? { ...p, name: u.name || p.name, gallery: g, galleryImages: g, avatarUrl1: g[0] }
+                  : p
+              )
+            );
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchRealPartners();
+  }, [userSession]);
+
   // Credit deduction handler
   const handleDeductCredits = (amount: number, _reason: string): boolean => {
     if (userCredits < amount) {
