@@ -376,89 +376,88 @@ const combinedPartners = approvedPartners;
             className="relative aspect-[4/3] w-full overflow-hidden bg-slate-950 cursor-pointer group/img"
             title="คลิกเพื่อเปิดดูรูปขนาดเต็ม"
           >
-            <img
-              src={
-                (() => {
-                  try {
-                    const raw =
-                      localStorage.getItem('laysea_partner_gallery') ||
-                      localStorage.getItem(`gallery_${partner.phone}`) ||
-                      localStorage.getItem(`gallery_${partner.id}`);
-                    if (raw) {
-                      const list = JSON.parse(raw);
-                      if (Array.isArray(list) && list[0]) return list[0];
-                    }
-                  } catch (e) {}
-                  return (
-                    partner.imageUrl ||
-                    partner.avatarUrl ||
-                    (partner as any).selfieUrl ||
-                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
-                  );
-                })()
+            {/* แสดงรูปพาร์ทเนอร์ (ดึงจากอัลบั้มจริงก่อนเสมอ) */}
+          <img
+            src={(() => {
+              // 1. เช็คจากฟิลด์ gallery หรือ galleryImages ของพาร์ทเนอร์ก่อน
+              const gList = (partner as any).gallery || (partner as any).galleryImages;
+              if (Array.isArray(gList) && gList.length > 0 && gList[0]) {
+                return gList[0];
               }
-              alt={partner.name}
-              className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
-              loading="lazy"
-              onError={(e: any) => {
-                // ป้องกันรูปแตก หากลิงก์รูปเสียหรือว่างเปล่า ให้สลับใช้รูปสำรองทันที
-                e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80';
-              }}
-            />
-            <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-              <span className="bg-slate-950/80 text-white text-[11px] px-2.5 py-1 rounded-full border border-slate-700 backdrop-blur-sm">
-                🔍 แตะดูรูปเต็ม
-              </span>
-            </div>
-{/* ปุ่มกดดูอัลบั้มภาพ 1-6 รูป */}
-            {(() => {
-              const getRealPhotos = (): string[] => {
-                if ((partner as any).galleryImages && (partner as any).galleryImages.length > 0) {
-                  return (partner as any).galleryImages;
-                }
-                const possibleKeys = [
-                  `gallery_${partner.phone}`,
-                  `gallery_${partner.id}`,
-                  'laysea_partner_gallery',
-                  'partner_gallery_images',
-                  'partner_photos'
-                ];
-                for (const k of possibleKeys) {
-                  try {
-                    const raw = localStorage.getItem(k);
-                    if (raw) {
-                      const parsed = JSON.parse(raw);
-                      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-                    }
-                  } catch (e) {}
-                }
-                const singlePhoto = partner.imageUrl || partner.avatarUrl || (partner as any).selfieUrl;
-                if (singlePhoto && !singlePhoto.includes('unsplash.com')) {
-                  return [singlePhoto];
-                }
-                return [];
-              };
+              // 2. เช็คจาก avatar / avatarUrl1
+              if ((partner as any).avatarUrl1) return (partner as any).avatarUrl1;
+              if ((partner as any).avatar) return (partner as any).avatar;
+              if (partner.imageUrl) return partner.imageUrl;
+              if ((partner as any).selfieUrl) return (partner as any).selfieUrl;
 
-              const partnerGallery = getRealPhotos();
-              const photoCount = partnerGallery.length;
+              // 3. Fallback localStorage
+              try {
+                const raw = localStorage.getItem(`gallery_${partner.phone}`) || localStorage.getItem(`gallery_${partner.id}`);
+                if (raw) {
+                  const list = JSON.parse(raw);
+                  if (Array.isArray(list) && list[0]) return list[0];
+                }
+              } catch (e) {}
 
-              return (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const photosToShow = partnerGallery.length > 0 
-                      ? partnerGallery 
-                      : [partner.imageUrl || partner.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'];
-                    setGalleryPartner({ ...partner, galleryImages: photosToShow } as any);
-                    setActiveGalleryIndex(0);
-                  }}
-                  className="absolute bottom-2 right-2 z-10 px-2.5 py-1 bg-slate-900/85 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold border border-slate-700/80 shadow-md backdrop-blur-md flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
-                >
-                  <span>📸 ดูรูป ({photoCount > 0 ? photoCount : 1} รูป)</span>
-                </button>
-              );
+              return 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80';
             })()}
+            alt={partner.name}
+            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+            onError={(e: any) => {
+              e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80';
+            }}
+          />
+          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+            <span className="bg-slate-950/80 text-white text-[11px] px-2.5 py-1 rounded-full border border-slate-700 backdrop-blur-sm">
+              🔍 แตะดูรูปเต็ม
+            </span>
+          </div>
+
+          {/* ปุ่มกดดูอัลบั้มภาพ 1-6 รูป */}
+          {(() => {
+            const rawGallery = (partner as any).gallery || (partner as any).galleryImages;
+            let partnerPhotos: string[] = [];
+
+            if (Array.isArray(rawGallery) && rawGallery.length > 0) {
+              partnerPhotos = rawGallery.filter(Boolean);
+            } else {
+              try {
+                const raw = localStorage.getItem(`gallery_${partner.phone}`) || localStorage.getItem(`gallery_${partner.id}`);
+                if (raw) {
+                  const list = JSON.parse(raw);
+                  if (Array.isArray(list)) partnerPhotos = list.filter(Boolean);
+                }
+              } catch (e) {}
+            }
+
+            // ถ้าไม่มีอัลบั้มแต่มีรูปหลัก ให้ใส่รูปหลักเป็น 1 รูป
+            if (partnerPhotos.length === 0) {
+              const single = (partner as any).avatarUrl1 || (partner as any).avatar || partner.imageUrl;
+              if (single && !single.includes('unsplash.com')) {
+                partnerPhotos = [single];
+              }
+            }
+
+            const photoCount = partnerPhotos.length;
+
+            return (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const photosToShow = photoCount > 0 ? partnerPhotos : [
+                    partner.imageUrl || (partner as any).avatarUrl1 || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
+                  ];
+                  setGalleryPartner({ ...partner, galleryImages: photosToShow } as any);
+                  setActiveGalleryIndex(0);
+                }}
+                className="absolute bottom-2 right-2 z-10 px-2.5 py-1 bg-slate-900/85 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold border border-slate-700/80 shadow-md backdrop-blur-md flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
+              >
+                <span>📷 ดูรูป ({photoCount > 0 ? photoCount : 1} รูป)</span>
+              </button>
+            );
+          })()}
 
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/25 to-transparent"></div>
 
