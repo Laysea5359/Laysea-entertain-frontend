@@ -106,25 +106,54 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       localStorage.setItem(`gallery_${userSession?.phone}`, JSON.stringify(updated));
       localStorage.setItem('laysea_partner_gallery', JSON.stringify(updated));
 
-// บันทึก/อัปเดตข้อมูลพาร์ทเนอร์และรูปอัลบั้มลง Firestore ทันที
-      try {
-        const db = getFirestore(app);
-        const partnerPhone = userSession?.phone || '0655397994';
-        await setDoc(doc(db, 'partners', partnerPhone), {
-          id: partnerPhone,
-          phone: partnerPhone,
-          name: userSession?.name || 'Laysea',
-          gallery: updated,
-          avatar: updated[0] || '',
-          rating: 4.96,
-          reviewsCount: 142,
-          isVerified: true,
-          status: 'online',
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      } catch (fsErr) {
-        console.error('Firestore save error:', fsErr);
+// บันทึก/อัปเดตข้อมูลพาร์ทเนอร์และรูปอัลบั้มลง Firestore และ MongoDB Atlas
+    try {
+      // ดึงเบอร์ของพาร์ทเนอร์ที่ล็อกอินอยู่จริง ถ้าไม่มีให้ดึงจาก id หรือ session
+      const partnerPhone = userSession?.phone || userSession?.id || '';
+      if (!partnerPhone) {
+        alert('ไม่พบข้อมูลเบอร์โทรศัพท์ของพาร์ทเนอร์ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+        return;
       }
+
+      const partnerName = userSession?.name || userSession?.nickname || 'พาร์ทเนอร์';
+
+      // 1. บันทึกลง Firestore
+      const db = getFirestore(app);
+      await setDoc(doc(db, 'partners', partnerPhone), {
+        id: partnerPhone,
+        phone: partnerPhone,
+        name: partnerName,
+        gallery: updated,
+        galleryImages: updated,
+        avatar: updated[0] || userSession?.avatar || '',
+        avatarUrl1: updated[0] || userSession?.avatar || '',
+        rating: userSession?.rating || 4.96,
+        isVerified: true,
+        status: 'online',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // 2. บันทึกลง MongoDB Atlas หลังบ้าน Render ควบคู่กันทันที
+      try {
+        await fetch('https://laysea-entertain-backend-1.onrender.com/api/users/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: partnerPhone,
+            name: partnerName,
+            gallery: updated,
+            galleryImages: updated,
+            avatar: updated[0] || '',
+            avatarUrl1: updated[0] || ''
+          })
+        });
+      } catch (backendErr) {
+        console.warn('Backend MongoDB sync error:', backendErr);
+      }
+
+    } catch (fsErr) {
+      console.error('Save error:', fsErr);
+    }
 
       alert('อัปโหลดรูปภาพขึ้น Cloud สำเร็จเรียบร้อยแล้ว!');
     } catch (err) {
