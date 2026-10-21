@@ -315,11 +315,21 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
         )}
 
         {/* Search Box */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
           <div className="relative flex-1">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="ค้นหาชื่อ, สกิล (ชงเหล้า, งานแต่ง, ทรานส์, ทอม, ถ่ายรูป), หรือย่าน..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-8 py-2 text-xs text-white placeholder-slate-5
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
