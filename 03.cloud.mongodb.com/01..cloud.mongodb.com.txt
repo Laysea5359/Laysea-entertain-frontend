@@ -1,7 +1,0 @@
-cloud.mongodb.com
-
-laysea5359_db_user
-
-jHjJXzVjfVopo3Ec
-
-mongodb+srv://laysea5359_db_user:jHjJXZVjfVopo3Ec@cluster0.hlste8q.mongodb.net/laysea_db?retryWrites=true&w=majority

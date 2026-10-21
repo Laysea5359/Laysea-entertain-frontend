@@ -81,6 +81,11 @@ export default function App() {
     setBookings((prev) => [newBooking, ...prev]);
   };
 
+// Booking delete handler
+  const handleDeleteBooking = (bookingId: string) => {
+    setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+  };
+
   // SOS trigger handler
   const handleTriggerSos = async (threat: string) => {
     alert(`🚨 [สัญญาณฉุกเฉิน SOS ถูกส่งแล้ว!]\nเหตุการณ์: ${threat}\nระบบได้ส่งพิกัดและแจ้งเตือนทีมงานความปลอดภัยเรียบร้อยแล้ว`);
@@ -148,6 +153,7 @@ export default function App() {
           onUpdateAvatar={handleUpdateAvatar}
           onDeleteAccount={handleDeleteAccount}
           onRefreshBookings={fetchBookings}
+          onDeleteBooking={handleDeleteBooking}
         />
       ) : userSession.role === 'partner' ? (
         /* 3. Partner View: Only sees gigs, safety check-in, earnings & persistent SOS */

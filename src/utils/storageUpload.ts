@@ -1,33 +1,40 @@
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '../firebase';
-
-export const dataURLtoBlob = (dataurl: string): Blob => {
-  const arr = dataurl.split(',');
-  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-  return new Blob([u8arr], { type: mime });
-};
-
+// ฟังก์ชันแปลงรูปภาพเป็น Base64 และบีบอัดภาพเพื่อเซฟลง Firestore
 export const uploadImageToCloud = async (
   fileOrBase64: File | string,
-  folder: string = 'partners'
+  _folder: string = 'partners'
 ): Promise<string> => {
-  if (typeof fileOrBase64 === 'string' && fileOrBase64.startsWith('http')) {
+  if (typeof fileOrBase64 === 'string') {
     return fileOrBase64;
   }
 
-  const blob = typeof fileOrBase64 === 'string' ? dataURLtoBlob(fileOrBase64) : fileOrBase64;
-  const filePath = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
-  const storageRef = ref(storage, filePath);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(fileOrBase64);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        let width = img.width;
+        let height = img.height;
 
-  const snapshot = await uploadBytesResumable(storageRef, blob, {
-    contentType: 'image/jpeg',
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(compressedBase64);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
   });
-
-  return await getDownloadURL(snapshot.ref);
 };

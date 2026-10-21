@@ -47,6 +47,7 @@ interface ClientPortalProps {
   onUpdateAvatar?: (url: string) => void;
   onDeleteAccount?: () => void;
   onRefreshBookings?: () => void;
+  onDeleteBooking?: (id: string) => void;
 }
 
 export const ClientPortal: React.FC<ClientPortalProps> = ({
@@ -62,7 +63,9 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   onUpdateAvatar,
   onDeleteAccount,
   onRefreshBookings,
+  onDeleteBooking,
 }) => {
+
   const [clientTab, setClientTab] = useState<'catalog' | 'ai-manager' | 'bookings' | 'wallet' | 'profile'>('catalog');
   const [selectedVdoPartner, setSelectedVdoPartner] = useState<Partner | null>(null);
   const [selectedBookingPartner, setSelectedBookingPartner] = useState<Partner | null>(null);
@@ -198,14 +201,15 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
         )}
 
         {clientTab === 'bookings' && (
-          <BookingsList
-            bookings={bookings}
-            onOpenSos={() => setIsSosOpen(true)}
-            onBrowsePartners={() => setClientTab('catalog')}
-            onOpenLiveTracking={(b) => setTrackingBooking(b)}
-            onRefreshBookings={onRefreshBookings}
-          />
-        )}
+            <BookingsList
+              bookings={bookings}
+              onOpenSos={() => setIsSosOpen(true)}
+              onBrowsePartners={() => setClientTab('catalog')}
+              onOpenLiveTracking={(b) => setTrackingBooking(b)}
+              onRefreshBookings={onRefreshBookings}
+              onDeleteBooking={onDeleteBooking}
+            />
+          )}
 
         {clientTab === 'wallet' && (
           <div className="space-y-4">

@@ -32,6 +32,8 @@ import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { INITIAL_PARTNERS } from '../data/partners';
 import { KycModal } from './KycModal';
 import { uploadImageToCloud } from '../utils/storageUpload';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { app } from '../firebase';
 
 interface PartnerPortalProps {
   userSession: UserSession;
@@ -103,6 +105,26 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       setGalleryImages(updated);
       localStorage.setItem(`gallery_${userSession?.phone}`, JSON.stringify(updated));
       localStorage.setItem('laysea_partner_gallery', JSON.stringify(updated));
+
+// บันทึก/อัปเดตข้อมูลพาร์ทเนอร์และรูปอัลบั้มลง Firestore ทันที
+      try {
+        const db = getFirestore(app);
+        const partnerPhone = userSession?.phone || '0655397994';
+        await setDoc(doc(db, 'partners', partnerPhone), {
+          id: partnerPhone,
+          phone: partnerPhone,
+          name: userSession?.name || 'Laysea',
+          gallery: updated,
+          avatar: updated[0] || '',
+          rating: 4.96,
+          reviewsCount: 142,
+          isVerified: true,
+          status: 'online',
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (fsErr) {
+        console.error('Firestore save error:', fsErr);
+      }
 
       alert('อัปโหลดรูปภาพขึ้น Cloud สำเร็จเรียบร้อยแล้ว!');
     } catch (err) {
@@ -266,20 +288,23 @@ const handleStartProgress = async (bookingId: string) => {
 };
 
   // Calculate earnings metrics
-  const completedJobs = jobs.filter((j) => j.status === 'completed');
-  const grossEarnings = completedJobs.reduce((acc, j) => acc + (j.partnerGrossBaht || j.totalAmountBaht * 0.8), 38400);
-  const totalWithholdingTax = completedJobs.reduce((acc, j) => acc + (j.withholdingTaxBaht || j.totalAmountBaht * 0.8 * 0.03), 1152);
+  const completedJobs = jobs.filter((j: any) => j.status === 'completed');
+  const grossEarnings = completedJobs.reduce(
+    (acc: number, j: any) => acc + (j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : (j.totalPrice || 0) * 0.8)),
+    0
+  );
+  const totalWithholdingTax = grossEarnings * 0.03;
   const netEarnings = grossEarnings - totalWithholdingTax;
 
-  const currentActiveJob = jobs.find((j) => j.status === 'accepted' || j.status === 'in_progress') || jobs[0];
+  const currentActiveJob = jobs.find((j: any) => j.status === 'accepted' || j.status === 'in_progress') || null;
 
-// ฟังก์ชันดาวน์โหลดหนังสือรับรอง หัก ณ ที่จ่าย 50 ทวิ (รองรับมือถือ)
+  // ฟังก์ชันดาวน์โหลดหนังสือรับรอง หัก ณ ที่จ่าย 50 ทวิ (รองรับมือถือ)
   const handleDownloadTaxDoc = () => {
     const partnerName = userSession?.name || 'พาร์ทเนอร์ Laysea';
     const cleanPhone = userSession?.phone || '090-XXX-XXXX';
-    const grossVal = '38,400';
-    const taxVal = '1,152';
-    const netVal = '37,248';
+    const grossVal = grossEarnings.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const taxVal = totalWithholdingTax.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const netVal = netEarnings.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
     const content = `===============================================================
@@ -692,70 +717,45 @@ const handleStartProgress = async (bookingId: string) => {
             </div>
 
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {jobs.filter((j) => j.status === 'completed').length > 0 ? (
-                jobs
-                  .filter((j) => j.status === 'completed')
-                  .map((j) => {
-                    const gross = j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : 0);
-                    const net = j.netPartnerPayoutBaht || gross * 0.97;
-                    return (
-                      <div key={j.id} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                            {j.eventType || 'เพื่อนดูแล / สังสรรค์'}
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            📅 วันที่: {j.date || new Date().toLocaleDateString('th-TH')} • {j.durationHours || 6} ชม.
-                          </div>
-                          <div className="text-[10px] text-slate-500">
-                            ลูกค้า: {j.clientName || 'ลูกค้าทั่วไป'}
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="text-xs font-bold text-amber-300">
-                            +{net.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
-                          </div>
-                          <div className="text-[9px] text-slate-400">
-                            (หัก 3% แล้ว)
-                          </div>
-                          <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
-                            โอนสำเร็จ
-                          </span>
-                        </div>
+          {jobs.filter((j) => j.status === 'completed').length > 0 ? (
+            jobs
+              .filter((j) => j.status === 'completed')
+              .map((j) => {
+                const gross = j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : 0);
+                const net = j.netPartnerPayoutBaht || gross * 0.97;
+                return (
+                  <div key={j.id} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                        {j.eventType || 'เพื่อนดูแล / สังสรรค์'}
                       </div>
-                    );
-                  })
-              ) : (
-                <div className="p-3 bg-slate-800/40 rounded-xl border border-slate-700/40 flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-xs text-slate-300 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                      ดูแลในวงสังสรรค์ / ปาร์ตี้
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        📅 วันที่: {j.date || new Date().toLocaleDateString('th-TH')} • {j.durationHours || 2} ชม.
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        ลูกค้า: {j.clientName || j.customerName || 'ลูกค้า Laysea'}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      📅 วันที่: 20 ต.ค. 2569 • 6 ชม.
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      ลูกค้า: Laysea
+                    <div className="text-right">
+                      <div className="font-bold text-xs text-amber-300">
+                        +{net.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
+                      </div>
+                      <div className="text-[9px] text-slate-400">(หัก 3% แล้ว)</div>
+                      <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
+                        เสร็จสิ้น
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xs font-bold text-amber-300">
-                      +1,769.28 ฿
-                    </div>
-                    <div className="text-[9px] text-slate-400">
-                      (หัก 3% แล้ว)
-                    </div>
-                    <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
-                      โอนสำเร็จ
-                    </span>
-                  </div>
-                </div>
-              )}
+                );
+              })
+          ) : (
+            <div className="py-6 text-center text-xs text-slate-500">
+              ยังไม่มีประวัติงานที่เสร็จสิ้น
             </div>
-          </div>
+          )}
+        </div>        
+      </div>
 
             <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
               <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
@@ -997,8 +997,9 @@ const handleStartProgress = async (bookingId: string) => {
           onClose={() => {
             setIsTrackingOpen(false);
             setActiveTrackingJob(null);
-            // เคลียร์งานออกจากหน้าจอทันทีเมื่อจบงานหรือปิดโมดอล
-            setJobs((prev) => prev.filter((j) => j.id !== (activeTrackingJob?.id || currentActiveJob?.id)));
+            // อัปเดตสถานะเป็น completed เพื่อให้งานวิ่งมาโชว์ในกล่องประวัติ
+const finishedJobId = activeTrackingJob?.id || currentActiveJob?.id;
+setJobs((prev) => prev.map((j) => j.id === finishedJobId ? { ...j, status: 'completed' } : j));
           }}
           onOpenSos={() => setIsSosOpen(true)}
         />
@@ -1010,10 +1011,20 @@ const handleStartProgress = async (bookingId: string) => {
           currentAvatarUrl={userSession.avatarUrl}
           userRole="partner"
           onClose={() => setIsEditAvatarOpen(false)}
-          onSaveAvatar={(url) => {
-            onUpdateAvatar(url);
-            setIsEditAvatarOpen(false);
-          }}
+          onSaveAvatar={async (url) => {
+        onUpdateAvatar(url);
+        setIsEditAvatarOpen(false);
+        try {
+          const db = getFirestore(app);
+          const partnerPhone = userSession.phone || '0812345678';
+          await setDoc(doc(db, 'partners', partnerPhone), {
+            avatar: url,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (err) {
+          console.error('Save partner avatar to firestore error:', err);
+        }
+      }}
         />
       )}
 

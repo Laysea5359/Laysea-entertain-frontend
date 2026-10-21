@@ -33,6 +33,16 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   onOpenLiveTracking,
   onRefreshBookings,
 }) => {
+  // ดึง ID ที่เคยสั่งลบเก็บไว้ในเครื่องมาคัดออกทันที
+  const [localBookings, setLocalBookings] = useState<Booking[]>(() => {
+    try {
+      const deletedIds: string[] = JSON.parse(localStorage.getItem('laysea_deleted_booking_ids') || '[]');
+      return bookings.filter((b) => !deletedIds.includes(b.id));
+    } catch {
+      return bookings;
+    }
+  });
+
   const [selectedReceiptBooking, setSelectedReceiptBooking] = useState<Booking | null>(null);
   const [selectedDisputeBooking, setSelectedDisputeBooking] = useState<Booking | null>(null);
   const [disputeReason, setDisputeReason] = useState('');
@@ -213,7 +223,7 @@ const handleReportNoShow = async (bookingId: string) => {
         </button>
       </div>
 
-      {bookings.length === 0 ? (
+      {localBookings.length === 0 ? (
         <div className="text-center py-12 bg-slate-900/60 rounded-2xl border border-slate-800 space-y-2.5">
           <Calendar className="w-8 h-8 text-slate-600 mx-auto" />
           <h3 className="text-xs font-semibold text-slate-300">ยังไม่มีรายการนัดหมายในขณะนี้</h3>
@@ -229,19 +239,25 @@ const handleReportNoShow = async (bookingId: string) => {
         </div>
       ) : (
         <div className="space-y-3">
-          {bookings.map((booking) => (
+          {localBookings.map((booking) => (
             <div
               key={booking.id}
-              className="bg-slate-900 rounded-2xl border border-slate-800 p-4 space-y-3 hover:border-slate-700 transition-all shadow-md"
+              className="booking-card-item bg-slate-900 rounded-2xl border border-slate-800 p-4 space-y-3 hover:border-slate-700 transition-all shadow-md"
             >
               {/* Header */}
               <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
                 <div className="flex items-center gap-2.5">
                   <img
-                    src={booking.partnerImage}
-                    alt={booking.partnerName}
-                    className="w-10 h-10 rounded-xl object-cover border border-slate-700"
-                  />
+                    src={
+                      booking.partnerAvatar ||
+                      booking.partnerImage ||
+                      booking.partner?.avatar ||
+                      booking.partner?.imageUrl ||
+                      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60'
+                  }
+                  alt={booking.partnerName || 'Partner'}
+                  className="w-10 h-10 rounded-xl object-cover border border-slate-700"
+                 />
                   <div>
                     <h3 className="font-bold text-white text-xs">{booking.partnerName}</h3>
                     <div className="text-[11px] text-rose-400 font-medium">{booking.eventType}</div>
@@ -296,6 +312,36 @@ const handleReportNoShow = async (bookingId: string) => {
 
               {/* Lifecycle Actions */}
               <div className="space-y-2 pt-1">
+               {/* ลบประวัติรายการเมื่อจบงานสมบูรณ์แล้ว */}
+                {booking.status === 'completed' && (
+                  <div className="flex justify-end pt-1">
+                    <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm('คุณต้องการลบประวัติการนัดหมายนี้ออกจากรายการใช่หรือไม่?')) {
+                      setLocalBookings((prev) => prev.filter((b) => b.id !== booking.id));
+                      const card = (e.currentTarget as HTMLElement).closest('.booking-card-item') as HTMLElement;
+                      if (card) {
+                        card.style.display = 'none';
+                      }
+                      try {
+                        const deletedIds = JSON.parse(localStorage.getItem('laysea_deleted_booking_ids') || '[]');
+                        deletedIds.push(booking.id);
+                        localStorage.setItem('laysea_deleted_booking_ids', JSON.stringify(deletedIds));
+                      } catch (err) {}
+                      if (typeof onRefreshBookings === 'function') {
+                        onRefreshBookings();
+                      }
+                    }
+                  }}
+                  className="text-[11px] px-2.5 py-1 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  ลบประวัติรายการนี้
+                </button>
+                  </div>
+                )}
+
                 {/* 1. Live Tracking (when accepted or in progress) */}
                 {(booking.status === 'accepted' || booking.status === 'in_progress') && onOpenLiveTracking && (
                   <button
@@ -424,13 +470,13 @@ const handleReportNoShow = async (bookingId: string) => {
             </div>
 
             <button
-              onClick={() => {
-                alert('ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงินสำเร็จ');
-                setSelectedReceiptBooking(null);
-              }}
+             onClick={() => {
+              window.print();
+              setSelectedReceiptBooking(null);
+            }}
               className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
-            >
-              ดาวน์โหลด PDF / พิมพ์ใบเสร็จ
+>
+            ดาวน์โหลด PDF / พิมพ์ใบเสร็จ
             </button>
           </div>
         </div>

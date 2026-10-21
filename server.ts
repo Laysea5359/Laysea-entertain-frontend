@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const INITIAL_PARTNERS: any[] = [];
 
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
@@ -437,7 +438,11 @@ app.post('/api/bookings', async (req: Request, res: Response) => {
   } = req.body;
 
  // ค้นหาพาร์ทเนอร์ทั้งจากรายชื่อเดิม และจากฐานข้อมูล KYC ที่เพิ่งสมัครใหม่
-  let partner: any = INITIAL_PARTNERS.find((p) => p.id === partnerId);
+  let partner: any = {
+  id: partnerId,
+  name: req.body.partnerName || 'Laysea Partner',
+  phone: req.body.partnerPhone || partnerId
+};
 
   if (!partner) {
     partner = kycApplications.find((k: any) => k.id === partnerId || `partner-${k.phone}` === partnerId);
