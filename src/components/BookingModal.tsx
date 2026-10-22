@@ -107,7 +107,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         clientId: userSession?.id || 'USR-CLIENT-01',
         clientName: userSession?.name || 'ลูกค้า Laysea',
         clientPhone: userSession?.phone || '089-112-2334',
-        status: 'confirmed',
+        status: 'pending', // ให้เป็นสถานะรอพาร์ทเนอร์กดรับงาน
         escrowStatus: 'held',
         meetupStatus: 'pending',
         createdAt: new Date().toISOString()
