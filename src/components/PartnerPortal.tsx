@@ -155,7 +155,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return saved ? JSON.parse(saved) : [];
   });
 
-  // ฟังก์ชันเลือกรูปภาพเข้าอัลบั้ม (สูงสุด 6 รูป) อัปโหลดขึ้น Cloud Storage
+  // ฟังก์ชันเลือกรูปภาพเข้าอัลบั้ม (แปลงเป็น Base64 ป้องกันปัญหา CORS Cloud Storage 100%)
   const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -166,38 +166,74 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     }
 
     const file = files[0];
-    try {
-      // 1. ส่งรูปขึ้น Firebase Cloud Storage
-      const cloudUrl = await uploadImageToCloud(file, `partners/${userSession?.phone || 'general'}/gallery`);
 
-      // 2. นำ URL คลาวด์ที่ได้มาเก็บลง State และ LocalStorage
-      const updated = [...galleryImages, cloudUrl].slice(0, 6);
-      setGalleryImages(updated);
-      localStorage.setItem(`gallery_${userSession?.phone}`, JSON.stringify(updated));
-      localStorage.setItem('laysea_partner_gallery', JSON.stringify(updated));
-
-      // 3. ซิงค์รูปโปรไฟล์และอัลบั้มใหม่ลง Cloud Firestore (คอลเลกชัน users) ทันที เพื่อให้หน้าลูกค้าเปลี่ยนตามแบบ Real-time
-      try {
-        const pId = userSession?.phone || userSession?.id;
-        if (pId) {
-          await setDoc(doc(db, 'users', pId), {
-            avatarUrl: updated[0] || cloudUrl,
-            imageUrl: updated[0] || cloudUrl,
-            gallery: updated,
-            galleryImages: updated,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-          console.log('[Firestore] ซิงค์รูปโปรไฟล์พาร์ทเนอร์สำเร็จ');
-        }
-      } catch (fErr) {
-        console.warn('Sync profile photo error:', fErr);
-      }
-
-      alert('อัปโหลดรูปภาพขึ้น Cloud สำเร็จเรียบร้อยแล้ว!');
-    } catch (err) {
-      console.error('Cloud Upload error:', err);
-      alert('อัปโหลดขึ้น Cloud ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
+    // เช็คขนาดไฟล์ก่อนบีบอัด
+    if (file.size > 8 * 1024 * 1024) {
+      alert('กรุณาเลือกไฟล์ภาพขนาดไม่เกิน 8MB');
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        // ย่อขนาดรูปภาพให้พอดี (กว้างสูงสุด 1000px) เพื่อให้ภาพคมชัดและขนาดไฟล์เล็ก
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1000;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // แปลงภาพเป็น Base64
+        const base64Url = canvas.toDataURL('image/jpeg', 0.82);
+
+        // รวมรูปใหม่เข้าอัลบั้ม (สูงสุด 6 รูป)
+        const updated = [...galleryImages, base64Url].slice(0, 6);
+        setGalleryImages(updated);
+
+        // บันทึกลง LocalStorage
+        if (userSession?.phone) {
+          localStorage.setItem(`gallery_${userSession.phone}`, JSON.stringify(updated));
+        }
+        localStorage.setItem('laysea_partner_gallery', JSON.stringify(updated));
+
+        // ซิงค์เข้า Cloud Firestore
+        try {
+          const pId = userSession?.phone || userSession?.id;
+          if (pId) {
+            // อัปเดตทั้ง collection 'users' และ 'partners'
+            await setDoc(doc(db, 'users', pId), {
+              gallery: updated,
+              galleryImages: updated,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            await setDoc(doc(db, 'partners', pId), {
+              gallery: updated,
+              galleryImages: updated,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            console.log('[Firestore] ซิงค์รูปภาพอัลบั้มเรียบร้อย');
+          }
+        } catch (fErr) {
+          console.warn('Sync profile photo error:', fErr);
+        }
+
+        alert('เพิ่มรูปภาพผลงานเรียบร้อยแล้ว');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   // ฟังก์ชันลบรูป
