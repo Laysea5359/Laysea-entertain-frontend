@@ -80,12 +80,10 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return () => clearInterval(interval);
   }, [userSession]);
 
-// 🌟 ดึงตารางงานของพาร์ทเนอร์จาก Cloud Firestore แบบ Real-time (ดึงทุกงานมาเทียบเพื่อให้แสดงผลทันที)
+// 🌟 ดึงตารางงานและคำขอจองใหม่ทั้งหมดของพาร์ทเนอร์จาก Cloud Firestore
   useEffect(() => {
     const rawId = userSession?.phone || userSession?.id;
-    if (!rawId) return;
-
-    const myPhone = String(rawId).replace(/\D/g, '');
+    const myPhone = String(userSession?.phone || '').replace(/\D/g, '');
 
     const unsubscribe = onSnapshot(
       collection(db, 'bookings'),
@@ -96,16 +94,18 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
           const pId = String(d.partnerId || '').replace(/\D/g, '');
           const pPhone = String(d.partnerPhone || '').replace(/\D/g, '');
 
-          // กรองเฉพาะงานที่เป็นของพาร์ทเนอร์คนนี้จริงๆ เท่านั้น (ไม่ดึงมั่ว)
-          const isMyJob =
-            (myPhone && (pId === myPhone || pPhone === myPhone || pId.includes(myPhone))) ||
-            String(d.partnerId || '') === String(rawId);
+          // ตรวจสอบว่าส่งมาหาพาร์ทเนอร์คนนี้จริงหรือไม่ (หรือมีเบอร์ตรงกัน)
+          const isTargetPartner =
+            (myPhone && (pPhone.includes(myPhone) || pId.includes(myPhone))) ||
+            String(d.partnerId || '') === String(rawId) ||
+            String(d.partnerPhone || '') === String(userSession?.phone || '');
 
-          if (isMyJob) {
+          if (isTargetPartner) {
             jobsList.push({ ...d, id: docSnap.id });
           }
         });
 
+        // เรียงจากงานล่าสุดขึ้นก่อน
         jobsList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setJobs(jobsList);
       },
@@ -113,6 +113,33 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
         console.warn('Partner jobs sync error:', error);
       }
     );
+
+// พาร์ทเนอร์กดยืนยันรับงาน
+  const handleAcceptJob = async (bookingId: string) => {
+    try {
+      await setDoc(doc(db, 'bookings', bookingId), {
+        status: 'accepted',
+        acceptedAt: new Date().toISOString()
+      }, { merge: true });
+      alert('คุณได้กดรับงานเรียบร้อยแล้ว! เตรียมตัวเริ่มให้บริการตามเวลานัดหมาย');
+    } catch (err) {
+      console.error('Accept job error:', err);
+      alert('เกิดข้อผิดพลาดในการกดรับงาน');
+    }
+  };
+
+  // พาร์ทเนอร์กดเริ่มงาน
+  const handleStartJob = async (bookingId: string) => {
+    try {
+      await setDoc(doc(db, 'bookings', bookingId), {
+        status: 'in_progress',
+        startedAt: new Date().toISOString()
+      }, { merge: true });
+      alert('เริ่มดำเนินงานแล้ว!');
+    } catch (err) {
+      console.error('Start job error:', err);
+    }
+  };
 
     return () => unsubscribe();
   }, [userSession?.phone, userSession?.id]);
@@ -525,36 +552,42 @@ const handleStartProgress = async (bookingId: string) => {
             ))}
 
             <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-white">ตารางงานที่ได้รับการยืนยัน:</span>
-              <span className="text-emerald-400 font-semibold text-[11px]">
-                {jobs.filter((j) => j.status === 'accepted' || j.status === 'in_progress').length} งานวันนี้
-              </span>
-            </div>
+            <span className="font-bold text-white">ตารางงานที่ได้รับการยืนยัน:</span>
+            <span className="text-emerald-400 font-semibold text-[11px]">
+              {jobs.filter((j: any) => ['pending', 'accepted', 'in_progress', 'confirmed'].includes(j.status)).length} งานวันนี้
+            </span>
+          </div>
 
-            {/* Confirmed / In-progress Jobs */}
-            {jobs.length === 0 ? (
-              <div className="p-6 bg-slate-900/60 rounded-2xl border border-slate-800 text-center text-xs text-slate-400 space-y-1">
-                <Calendar className="w-7 h-7 text-slate-600 mx-auto mb-1" />
-                <p className="font-semibold text-slate-300">ยังไม่มีงานในสถานะดำเนินการขณะนี้</p>
-                <p className="text-[10px] text-slate-500">เมื่อลูกค้าสร้างนัดหมาย ระบบจะแจ้งเตือนพร้อมสิทธิประโยชน์ประกันอุบัติเหตุทันที</p>
-              </div>
-            ) : (
-              jobs.map((job) => (
+          {/* Confirmed / Pending / In-progress Jobs */}
+          {jobs.filter((j: any) => ['pending', 'accepted', 'in_progress', 'confirmed'].includes(j.status)).length === 0 ? (
+            <div className="p-6 bg-slate-900/60 rounded-2xl border border-slate-800 text-center text-xs text-slate-400 space-y-1">
+              <Calendar className="w-7 h-7 text-slate-600 mx-auto mb-1" />
+              <p className="font-semibold text-slate-300">ยังไม่มีงานในสถานะดำเนินการขณะนี้</p>
+              <p className="text-[10px] text-slate-500">เมื่อลูกค้าสร้างนัดหมาย ระบบจะแจ้งเตือนพร้อมสิทธิประโยชน์ความคุ้มครองทันที</p>
+            </div>
+          ) : (
+            jobs
+              .filter((j: any) => ['pending', 'accepted', 'in_progress', 'confirmed'].includes(j.status))
+              .map((job: any) => (
                 <div key={job.id} className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-3 shadow-md">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <h4 className="font-bold text-white text-xs">{job.eventType}</h4>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <h4 className="font-bold text-white text-xs">{job.eventType || 'นัดหมายบริการ'}</h4>
                     </div>
-                    <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-medium">
-                      {job.status === 'in_progress' ? '🟢 กำลังปฏิบัติงาน' : 'ยืนยันแล้ว'}
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                      job.status === 'pending'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                    }`}>
+                      {job.status === 'pending' ? '⏳ รอคุณตอบรับ' : job.status === 'in_progress' ? '🟢 กำลังปฏิบัติงาน' : '✅ รับงานแล้ว'}
                     </span>
                   </div>
 
                   <div className="text-xs text-slate-300 space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
                     <div className="flex items-center gap-2">
                       <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      <span>เวลา: {job.startTime} น. ({job.durationHours} ชั่วโมง)</span>
+                      <span>เวลา: {job.date} ({job.startTime} น.) • {job.durationHours} ชั่วโมง</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
@@ -566,76 +599,51 @@ const handleStartProgress = async (bookingId: string) => {
                     </div>
                   </div>
 
-                 {/* Actions for Partner */}
-            <div className="space-y-2">
-              {/* 1. กรณีงานใหม่ รอพาร์ทเนอร์กดรับงาน */}
-{(!job.status || job.status === 'pending' || job.status === 'matched_pending' || job.status === 'waiting') && (
-  <div className="flex gap-2 pt-2">
-    <button
-      type="button"
-      onClick={() => handleAcceptJob(job.id)}
-      className="flex-1 py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
-    >
-      <CheckCircle2 className="w-3.5 h-3.5" />
-      <span>✓ ยอมรับงาน</span>
-    </button>
-    <button
-      type="button"
-      onClick={() => handleRejectJob(job.id)}
-      className="flex-1 py-2.5 px-3 bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-    >
-      <span>✕ ปฏิเสธงาน</span>
-    </button>
-  </div>
-)}
-
-              {/* 2. กรณีกดยอมรับแล้ว (accepted หรือ confirmed) ถึงจะแสดงปุ่มดูพิกัด และปุ่มเริ่มงาน */}
-              {(job.status === 'accepted' || job.status === 'confirmed') && (
-                <>
-                  <button
-                    onClick={() => {
-                      setActiveTrackingJob(job);
-                      setIsTrackingOpen(true);
-                    }}
-                    className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Navigation className="w-3.5 h-3.5 animate-spin" />
-                    <span>📍 ดูพิกัดนัดเจอลูกค้า & แผนที่ความปลอดภัยสด</span>
-                  </button>
-
-                  <button
-                  onClick={() => {
-                    handleStartProgress(job.id);
-                    setActiveTrackingJob(job);
-                    setIsTrackingOpen(true);
-                  }}
-                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>เริ่มงานแล้ว (เข้าพบลูกค้า & เปิดระบบคุ้มครอง)</span>
-                </button>
-                </>
-              )}
-            </div>
-
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400">รายได้สุทธิหลังหักภาษี 3% (ม.3 เตรส):</span>
-                      <div className="font-bold text-amber-300 text-sm">
-                        {(job.netPartnerPayoutBaht || job.totalAmountBaht * 0.8 * 0.97).toLocaleString()} บาท
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setIsSosOpen(true)}
-                      className="px-2.5 py-1 bg-slate-800 hover:bg-red-950/40 text-red-300 border border-slate-700 hover:border-red-500/40 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
-                    >
-                      <AlertTriangle className="w-3 h-3 text-red-400" />
-                      <span>รายงานปัญหา</span>
-                    </button>
+                  {/* ปุ่มกดรับงาน / เริ่มงาน สำหรับพาร์ทเนอร์ */}
+                  <div className="pt-1 flex gap-2">
+                    {job.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await setDoc(doc(db, 'bookings', job.id), {
+                              status: 'accepted',
+                              acceptedAt: new Date().toISOString()
+                            }, { merge: true });
+                            alert('ตอบรับคำขอนัดหมายเรียบร้อยแล้ว!');
+                          } catch (e) {
+                            console.error(e);
+                            alert('เกิดข้อผิดพลาดในการตอบรับงาน');
+                          }
+                        }}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md"
+                      >
+                        ✅ กดตอบรับงานนี้ (Accept)
+                      </button>
+                    )}
+                    {job.status === 'accepted' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await setDoc(doc(db, 'bookings', job.id), {
+                              status: 'in_progress',
+                              startedAt: new Date().toISOString()
+                            }, { merge: true });
+                            alert('เริ่มดำเนินงานแล้ว!');
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md"
+                      >
+                        🚀 เริ่มงาน (Start Gig)
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
-            )}
+          )}
 
             {/* Safety Reminder */}
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-200 space-y-1">
