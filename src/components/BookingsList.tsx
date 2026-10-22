@@ -40,6 +40,17 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const [disputeReason, setDisputeReason] = useState('');
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
+// 🌟 กรองตัด Mockup เริ่มต้น (Laysea Partner วันที่ 2026-10-21) ออกเด็ดขาด
+  const validBookings = (bookings || []).filter((b: any) => {
+    if (!b) return false;
+    const isMock =
+      b.id === 'mock-1' ||
+      b.bookingId === 'mock-1' ||
+      b.partnerName === 'Laysea Partner' ||
+      String(b.date || '').includes('2026-10-21');
+    return !isMock;
+  });
+
   // Status mapping
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
@@ -328,7 +339,7 @@ const handleReportNoShow = async (bookingId: string) => {
         </button>
       </div>
 
-      {bookings.length === 0 ? (
+      {validBookings.length === 0 ? (
         <div className="text-center py-12 bg-slate-900/60 rounded-2xl border border-slate-800 space-y-2.5">
           <Calendar className="w-8 h-8 text-slate-600 mx-auto" />
           <h3 className="text-xs font-semibold text-slate-300">ยังไม่มีรายการนัดหมายในขณะนี้</h3>
@@ -344,7 +355,7 @@ const handleReportNoShow = async (bookingId: string) => {
         </div>
       ) : (
         <div className="space-y-3">
-          {bookings.map((booking) => (
+          {validBookings.map((booking) => (
             <div
               key={booking.id}
               className="bg-slate-900 rounded-2xl border border-slate-800 p-4 space-y-3 hover:border-slate-700 transition-all shadow-md"

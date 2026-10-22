@@ -118,15 +118,18 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
 
 // พาร์ทเนอร์กดยืนยันรับงาน
   const handleAcceptJob = async (bookingId: string) => {
+    if (!bookingId) return;
     try {
+      // อัปเดตสถานะตรงไปยัง Cloud Firestore
       await setDoc(doc(db, 'bookings', bookingId), {
         status: 'accepted',
         acceptedAt: new Date().toISOString()
       }, { merge: true });
-      alert('คุณได้กดรับงานเรียบร้อยแล้ว! เตรียมตัวเริ่มให้บริการตามเวลานัดหมาย');
+
+      alert('ตอบรับงานเรียบร้อยแล้ว! พิกัดนัดพบและเบอร์ติดต่อลูกค้าได้รับการเปิดเผยแล้ว');
     } catch (err) {
       console.error('Accept job error:', err);
-      alert('เกิดข้อผิดพลาดในการกดรับงาน');
+      alert('เกิดข้อผิดพลาดในการตอบรับงาน');
     }
   };
 
@@ -557,12 +560,12 @@ const handleStartProgress = async (bookingId: string) => {
             <div className="flex items-center justify-between text-xs">
             <span className="font-bold text-white">ตารางงานที่ได้รับการยืนยัน:</span>
             <span className="text-emerald-400 font-semibold text-[11px]">
-              {jobs.filter((j: any) => ['pending', 'accepted', 'in_progress', 'confirmed'].includes(j.status)).length} งานวันนี้
+              {jobs.filter((j: any) => ['accepted', 'in_progress', 'confirmed'].includes(j.status)).length} งานวันนี้
             </span>
           </div>
 
           {/* Confirmed / Pending / In-progress Jobs */}
-          {jobs.filter((j: any) => ['pending', 'accepted', 'in_progress', 'confirmed'].includes(j.status)).length === 0 ? (
+          {jobs.filter((j: any) => ['accepted', 'in_progress', 'confirmed'].includes(j.status)).length === 0 ? (
             <div className="p-6 bg-slate-900/60 rounded-2xl border border-slate-800 text-center text-xs text-slate-400 space-y-1">
               <Calendar className="w-7 h-7 text-slate-600 mx-auto mb-1" />
               <p className="font-semibold text-slate-300">ยังไม่มีงานในสถานะดำเนินการขณะนี้</p>
@@ -570,7 +573,7 @@ const handleStartProgress = async (bookingId: string) => {
             </div>
           ) : (
             jobs
-              .filter((j: any) => ['pending', 'accepted', 'in_progress', 'confirmed'].includes(j.status))
+              .filter((j: any) => ['accepted', 'in_progress', 'confirmed'].includes(j.status))
               .map((job: any) => (
                 <div key={job.id} className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-3 shadow-md">
                   <div className="flex items-center justify-between">

@@ -458,7 +458,7 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>นัดหมาย ({bookings.length})</span>
+          <span>นัดหมาย ({liveBookings?.length || 0})</span>
         </button>
 
         <button
