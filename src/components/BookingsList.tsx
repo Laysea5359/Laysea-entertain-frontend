@@ -279,6 +279,17 @@ const handleReportNoShow = async (bookingId: string) => {
                 </button>
               </div>
 
+       {/* 🌟 เพิ่มปุ่มลบรายการตรงนี้ (วางต่อลงมา) */}
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => handleDeleteBooking(booking.bookingId || booking.id)}
+            className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
+          >
+            🗑️ ลบรายการนี้
+          </button>
+        </div>
+
               {/* Details grid */}
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
                 <div className="flex items-center gap-1.5 text-[11px]">

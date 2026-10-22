@@ -80,7 +80,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return () => clearInterval(interval);
   }, [userSession]);
 
-// 🌟 ดึงตารางงานของพาร์ทเนอร์จาก Cloud Firestore แล้วคัดกรองงานของพาร์ทเนอร์คนนี้
+// 🌟 ดึงตารางงานของพาร์ทเนอร์จาก Cloud Firestore แบบ Real-time (ดึงทุกงานมาเทียบเพื่อให้แสดงผลทันที)
   useEffect(() => {
     const rawId = userSession?.phone || userSession?.id;
     if (!rawId) return;
@@ -96,12 +96,10 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
           const pId = String(d.partnerId || '').replace(/\D/g, '');
           const pPhone = String(d.partnerPhone || '').replace(/\D/g, '');
 
-          // ตรวจสอบว่างานนี้เป็นของพาร์ทเนอร์คนนี้จริงหรือไม่
+          // กรองเฉพาะงานที่เป็นของพาร์ทเนอร์คนนี้จริงๆ เท่านั้น (ไม่ดึงมั่ว)
           const isMyJob =
-            (myPhone && (pId.includes(myPhone) || pPhone.includes(myPhone))) ||
-            String(d.partnerId || '') === String(rawId) ||
-            String(d.partnerName || '').includes('นาย') ||
-            String(d.partnerName || '').includes('Lay');
+            (myPhone && (pId === myPhone || pPhone === myPhone || pId.includes(myPhone))) ||
+            String(d.partnerId || '') === String(rawId);
 
           if (isMyJob) {
             jobsList.push({ ...d, id: docSnap.id });
