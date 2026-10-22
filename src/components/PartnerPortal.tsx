@@ -248,7 +248,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
           netPartnerPayoutBaht: item.netPartnerPayoutBaht || (Number(item.totalAmountBaht || item.price || 2400) * 0.8 * 0.97)
         }));
 
-        setJobs(formattedJobs);
+        // setJobs(formattedJobs);
       }
     } catch (err) {
       console.error('Failed to load partner jobs:', err);
@@ -257,12 +257,13 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     }
   };
 
-  useEffect(() => {
-    fetchPartnerJobs();
-    // ดึงงานอัตโนมัติทุกๆ 4 วินาที เพื่อให้งานใหม่เด้งขึ้นทันที
-    const interval = setInterval(fetchPartnerJobs, 4000);
-    return () => clearInterval(interval);
-  }, [userSession]);
+  /*
+useEffect(() => {
+  fetchPartnerJobs();
+  const interval = setInterval(fetchPartnerJobs, 4000);
+  return () => clearInterval(interval);
+}, [userSession]);
+*/
 
   // Partner Action: Accept Gig (5-min SLA response)
   const handleAcceptJob = async (bookingId: string) => {
