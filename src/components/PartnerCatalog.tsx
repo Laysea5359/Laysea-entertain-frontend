@@ -39,51 +39,121 @@ const [approvedPartners, setApprovedPartners] = useState<any[]>([]);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
 
 useEffect(() => {
-  const fetchApprovedPartners = async () => {
-    try {
-      const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-      const res = await fetch(`${backendUrl}/api/admin/data`);
-      const data = await res.json();
-      if (data && Array.isArray(data.kycList)) {
-        // คัดเลือกเฉพาะคนที่แอดมินอนุมัติแล้ว (approved)
-        const approved = data.kycList
-          .filter((k: any) => k.status === 'approved')
-          .map((k: any) => ({
-            id: k.id || `partner-${k.phone}`,
-            name: k.fullName || k.name || 'พาร์ทเนอร์ใหม่',
-            nickname: k.nickname || k.fullName?.split(' ')[0] || 'พาร์ทเนอร์',
-            gender: k.gender || 'female',
-            lgbtqSubtype: k.lgbtqSubtype || undefined,
-            age: k.age || 25,
-            height: k.height || 165,
-            location: k.province || k.location || 'กรุงเทพฯ',
-            imageUrl: k.avatarUrl || k.selfieUrl || k.photoFace || k.imageUrl || '',
-              avatarUrl: k.avatarUrl || k.selfieUrl || k.photoFace || k.imageUrl || '',
-              galleryImages: (k.galleryImages && k.galleryImages.length > 0)
-                ? k.galleryImages
-                : [k.avatarUrl || k.selfieUrl, k.fullBodyPhoto, k.idCardPhoto].filter(Boolean),
-              hourlyRate: k.hourlyRate || 500,
-              bio: k.bio || 'พาร์ทเนอร์ยืนยันตัวตนผ่านระบบเรียบร้อย (Verified Partner)',
-              skills: k.skills || ['ดูแลในวงสังสรรค์', 'เพื่อนเที่ยวคาเฟ่/ชิล'],
-              drinkingSkill: k.drinkingSkill || 'ดื่มเป็นเพื่อน',
-              isVerified: true,
-              rating: 5.0,
-              reviewCount: 1,
-              completedJobs: 0,
-              badges: ['100% Verified', 'KYC เช็ค'],
-          }));
-        setApprovedPartners(approved);
-      }
-    } catch (err) {
-      console.error('Failed to load approved partners:', err);
-    }
-  };
+    let isMounted = true;
 
-  fetchApprovedPartners();
-}, []);
+    // ฟังก์ชันแปลงข้อมูลให้อยู่ในรูปแบบ CatalogPartner
+    const processPartnerData = (rawList: any[]) => {
+      const formatted = rawList.map((d: any) => {
+        const rawGallery = d.gallery || d.galleryImages;
+        const fallbackPhoto = d.avatarUrl1 || d.avatar || d.avatarUrl || d.imageUrl || d.selfieUrl || d.photoFace;
+        const photoList: string[] =
+          Array.isArray(rawGallery) && rawGallery.length > 0
+            ? rawGallery.filter(Boolean)
+            : fallbackPhoto
+            ? [fallbackPhoto]
+            : [];
+        const mainPhoto = photoList[0] || fallbackPhoto || '';
+
+        const isVerified =
+          d.isKycVerified === true || d.kycStatus === 'approved' || d.isVerified === true || d.status === 'approved';
+
+        const phoneDigits = String(d.phone || '').replace(/\D/g, '');
+        const partnerKey = phoneDigits || String(d.id || d._id || '');
+
+        return {
+          ...d,
+          id: partnerKey,
+          name: d.name || d.fullName || d.nickname || 'พาร์ทเนอร์ Laysea',
+          nickname: d.nickname || d.name || 'Laysea',
+          gender: String(d.gender || 'female').toLowerCase(),
+          lgbtqSubtype: d.lgbtqSubtype || d.subtype || undefined,
+          age: Number(d.age) || 25,
+          height: Number(d.height) || 165,
+          location: d.location || d.province || 'กรุงเทพฯ / ชลบุรี',
+          imageUrl: mainPhoto,
+          avatarUrl: mainPhoto,
+          gallery: photoList,
+          galleryImages: photoList,
+          hourlyRate: Number(d.price ?? d.hourlyRate) || 1500,
+          bio: d.bio || 'พาร์ทเนอร์ยืนยันตัวตนเรียบร้อย (Verified Partner)',
+          skills: Array.isArray(d.services)
+            ? d.services
+            : Array.isArray(d.skills)
+            ? d.skills
+            : ['ดูแลในวงสังสรรค์', 'เพื่อนเที่ยวคาเฟ่/ชิล'],
+          drinkingSkill: d.drinkingSkill || 'ดื่มเป็นเพื่อน',
+          isVerified,
+          rating: Number(d.rating) || 5.0,
+          reviewCount: Number(d.reviewsCount ?? d.reviewCount) || 1,
+          completedJobs: Number(d.completedJobs) || 0,
+          badges: isVerified ? ['100% Verified', 'KYC เช็ค'] : [],
+        };
+      });
+
+      if (isMounted && formatted.length > 0) {
+        setApprovedPartners(formatted);
+      }
+    };
+
+    // 1. ดึงข้อมูลสดแบบ Real-time จาก Cloud Firestore (คอลเลกชัน users)
+    const db = getFirestore(app);
+    const unsubUsers = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        const liveList: any[] = [];
+        snapshot.docs.forEach((docSnap) => {
+          const d = docSnap.data();
+          const isPartner =
+            d.role === 'partner' ||
+            d.userType === 'partner' ||
+            d.hourlyRate !== undefined ||
+            d.price !== undefined ||
+            d.isPartner === true;
+
+          if (isPartner) {
+            liveList.push({ ...d, id: docSnap.id });
+          }
+        });
+
+        if (liveList.length > 0) {
+          processPartnerData(liveList);
+        }
+      },
+      (err) => console.warn('Firestore users sync error:', err)
+    );
+
+    // 2. ดึงผ่าน Backend API /api/admin/data ควบคู่กัน
+    const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
+    fetch(`${backendUrl}/api/admin/data`)
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error('Backend responded error');
+      })
+      .then((data) => {
+        if (!isMounted || !data) return;
+        const kycApproved = Array.isArray(data.kycList)
+          ? data.kycList.filter((k: any) => k.status === 'approved')
+          : [];
+        const users = Array.isArray(data.users)
+          ? data.users.filter((u: any) => u.role === 'partner' || u.userType === 'partner')
+          : [];
+        const merged = [...users, ...kycApproved];
+        if (merged.length > 0) {
+          processPartnerData(merged);
+        }
+      })
+      .catch((err) => {
+        console.warn('Backend data fallback to Firestore:', err);
+      });
+
+    return () => {
+      isMounted = false;
+      unsubUsers();
+    };
+  }, []);
 
 // รวมพาร์ทเนอร์เดิม 10 คน เข้ากับพาร์ทเนอร์ที่เพิ่งอนุมัติใหม่
-const combinedPartners = [...partners, ...approvedPartners];
+const combinedPartners = approvedPartners.length > 0 ? approvedPartners : partners;
 
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
@@ -103,9 +173,12 @@ const combinedPartners = [...partners, ...approvedPartners];
     { id: 'non_binary', label: '🎨 นอนไบนารี (Non-Binary)' },
   ];
 
-  const filteredPartners = combinedPartners.filter((p) => {
+  const filteredPartners = (combinedPartners || []).filter((p) => {
     // 1. Gender filter
-    if (selectedGender !== 'all' && p.gender !== selectedGender) return false;
+    if (selectedGender !== 'all') {
+      const pGender = String(p.gender || '').toLowerCase();
+      if (pGender !== selectedGender.toLowerCase()) return false;
+    }
 
     // 2. LGBTQ+ Subtype filter
     if (selectedGender === 'lgbtq' && selectedLgbtqSubtype !== 'all') {
@@ -113,42 +186,33 @@ const combinedPartners = [...partners, ...approvedPartners];
     }
 
     // 3. Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = p.name.toLowerCase().includes(q) || p.nickname.toLowerCase().includes(q);
-      const matchSkill = p.skills.some((s) => s.toLowerCase().includes(q));
-      const matchArea = p.areas.some((a) => a.toLowerCase().includes(q)) || p.location.toLowerCase().includes(q);
-      const matchBio = p.bio.toLowerCase().includes(q);
-      const matchTrait = p.specificTraits?.some((t) => t.toLowerCase().includes(q));
-      const matchPresentation = p.stylePresentation?.toLowerCase().includes(q);
-      const matchLgbtq = p.lgbtqIdentityLabel?.toLowerCase().includes(q);
-      if (!matchName && !matchSkill && !matchArea && !matchBio && !matchTrait && !matchPresentation && !matchLgbtq) {
-        return false;
-      }
+    if (searchQuery && searchQuery.trim() !== '') {
+      const q = searchQuery.trim().toLowerCase();
+      const name = String(p.name || '').toLowerCase();
+      const nickname = String(p.nickname || '').toLowerCase();
+      const location = String(p.location || '').toLowerCase();
+      const bio = String(p.bio || '').toLowerCase();
+      const skillsMatch = Array.isArray(p.skills) && p.skills.some((s: string) => String(s).toLowerCase().includes(q));
+
+      const isMatch = name.includes(q) || nickname.includes(q) || location.includes(q) || bio.includes(q) || skillsMatch;
+      if (!isMatch) return false;
     }
 
-    // 4. Category filter
-    if (selectedCategory === 'party_care') {
-      return (
-        p.skills.some((s) => s.includes('สังสรร') || s.includes('ดูแล') || s.includes('ชง') || s.includes('ปาร์ตี้')) ||
-        p.drinkingSkill.includes('ปาร์ตี้') ||
-        p.drinkingSkill.includes('ดื่มเป็นเพื่อน')
-      );
-    }
-    if (selectedCategory === 'wedding') {
-      return p.skills.some((s) => s.includes('งานแต่ง') || s.includes('งานสังคม'));
-    }
-    if (selectedCategory === 'dinner') {
-      return p.skills.some((s) => s.includes('ดินเนอร์') || s.includes('Fine Dining') || s.includes('กินข้าว'));
-    }
-    if (selectedCategory === 'party') {
-      return p.drinkingSkill.includes('ปาร์ตี้') || p.skills.some((s) => s.includes('ชง') || s.includes('ปาร์ตี้'));
-    }
-    if (selectedCategory === 'cafe') {
-      return p.skills.some((s) => s.includes('คาเฟ่') || s.includes('ถ่ายรูป') || s.includes('ช็อปปิ้ง'));
-    }
-    if (selectedCategory === 'fan') {
-      return p.vibeTags.some((t) => t.includes('ฟีลแฟน') || t.includes('คุณหนู') || t.includes('น่ารัก'));
+    // 4. Category filter (ถ้าเลือก "ทั้งหมด" ให้ผ่านเลย ไม่บล็อก)
+    if (selectedCategory && selectedCategory !== 'all') {
+      const skills: string[] = Array.isArray(p.skills) ? p.skills : [];
+      const drink = String(p.drinkingSkill || '');
+      
+      if (selectedCategory === 'party_care') {
+        const match = skills.some((s) => String(s).includes('สังสรรค์') || String(s).includes('ดูแล')) || drink !== '';
+        if (!match) return false;
+      } else if (selectedCategory === 'wedding') {
+        const match = skills.some((s) => String(s).includes('งานแต่ง') || String(s).includes('สังคม'));
+        if (!match) return false;
+      } else if (selectedCategory === 'party') {
+        const match = skills.some((s) => String(s).includes('ชงเหล้า') || String(s).includes('ปาร์ตี้')) || drink.includes('ปาร์ตี้');
+        if (!match) return false;
+      }
     }
 
     return true;
