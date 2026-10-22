@@ -547,12 +547,30 @@ const handleStartProgress = async (bookingId: string) => {
 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleAcceptJob(job.id)}
-                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>ตอบรับงานนี้ (Accept Gig)</span>
-                  </button>
+            type="button"
+            onClick={async () => {
+              try {
+                const bId = job.bookingId || job.id;
+                if (!bId) {
+                  alert('ไม่พบรหัสงาน');
+                  return;
+                }
+                await setDoc(doc(db, 'bookings', bId), {
+                  status: 'accepted',
+                  acceptedAt: new Date().toISOString()
+                }, { merge: true });
+
+                alert('ตอบรับงานเรียบร้อยแล้ว! เตรียมตัวเดินทางและเปิด Live GPS ได้เลย');
+              } catch (err) {
+                console.error('Accept gig error:', err);
+                alert('เกิดข้อผิดพลาดในการตอบรับงาน');
+              }
+            }}
+            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center gap-1"
+          >
+            <Check className="w-4 h-4" />
+            <span>ตอบรับงานนี้ (Accept Gig)</span>
+          </button>
                 </div>
               </div>
             ))}
