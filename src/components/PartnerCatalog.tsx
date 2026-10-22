@@ -161,7 +161,7 @@ useEffect(() => {
     };
   }, []);
 
-// รวมพาร์ทเนอร์เดิม 10 คน เข้ากับพาร์ทเนอร์ที่เพิ่งอนุมัติใหม่
+// ใช้ข้อมูลพาร์ทเนอร์จริงจาก Cloud ถ้ามีข้อมูลแล้วให้ใช้เฉพาะชุดจริง ไม่เอาตัวเดิมมาต่อซ้ำ
 const combinedPartners = approvedPartners.length > 0 ? approvedPartners : partners;
 
   const categories = [

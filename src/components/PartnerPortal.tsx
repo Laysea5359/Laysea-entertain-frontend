@@ -104,6 +104,23 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       localStorage.setItem(`gallery_${userSession?.phone}`, JSON.stringify(updated));
       localStorage.setItem('laysea_partner_gallery', JSON.stringify(updated));
 
+      // 3. ซิงค์รูปโปรไฟล์และอัลบั้มใหม่ลง Cloud Firestore (คอลเลกชัน users) ทันที เพื่อให้หน้าลูกค้าเปลี่ยนตามแบบ Real-time
+      try {
+        const pId = userSession?.phone || userSession?.id;
+        if (pId) {
+          await setDoc(doc(db, 'users', pId), {
+            avatarUrl: updated[0] || cloudUrl,
+            imageUrl: updated[0] || cloudUrl,
+            gallery: updated,
+            galleryImages: updated,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          console.log('[Firestore] ซิงค์รูปโปรไฟล์พาร์ทเนอร์สำเร็จ');
+        }
+      } catch (fErr) {
+        console.warn('Sync profile photo error:', fErr);
+      }
+
       alert('อัปโหลดรูปภาพขึ้น Cloud สำเร็จเรียบร้อยแล้ว!');
     } catch (err) {
       console.error('Cloud Upload error:', err);
