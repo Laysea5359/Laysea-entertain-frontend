@@ -438,20 +438,33 @@ useEffect(() => {
           >
             <img
               src={(() => {
+                // 1. ตรวจสอบรูปโปรไฟล์จาก LocalStorage (กรณีเพิ่งอัปเดตใหม่)
+                const localAvatar = typeof window !== 'undefined' && partner?.phone
+                  ? (localStorage.getItem(`partner_avatar_${partner.phone}`) || localStorage.getItem(`avatar_${partner.phone}`))
+                  : null;
+
+                // 2. ตรวจสอบรูปอัลบั้มสำรอง
                 const localImgs = typeof window !== 'undefined' && partner?.phone 
                   ? localStorage.getItem(`gallery_${partner.phone}`) 
                   : null;
                 const parsedLocal = localImgs ? JSON.parse(localImgs) : null;
-                const localFirst = Array.isArray(parsedLocal) && parsedLocal.length > 0 ? parsedLocal[0] : null;
+                const localFirstGallery = Array.isArray(parsedLocal) && parsedLocal.length > 0 ? parsedLocal[0] : null;
 
+                // ลำดับการแสดงผล:
+                // อันดับ 1: รูปที่ผู้ใช้คลิกเลือกจากแถบรูปเล็กด้านล่าง (activePhotoMap)
+                // อันดับ 2: รูปโปรไฟล์จริงของพาร์ทเนอร์ (avatarUrl / localAvatar / imageUrl / selfieUrl)
+                // อันดับ 3: ถ้ารูปโปรไฟล์ไม่มี ค่อยเอารูปแรกในอัลบั้มมาแสดง
                 return (
                   activePhotoMap[partner.id] ||
+                  localAvatar ||
+                  partner.avatarUrl ||
+                  partner.profileImage ||
+                  (partner.imageUrl && !partner.imageUrl.includes('unsplash.com') ? partner.imageUrl : null) ||
+                  (partner as any).selfieUrl ||
                   (Array.isArray(partner.gallery) && partner.gallery[0]) ||
                   (Array.isArray((partner as any).galleryImages) && (partner as any).galleryImages[0]) ||
-                  localFirst ||
-                  partner.avatarUrl ||
+                  localFirstGallery ||
                   partner.imageUrl ||
-                  (partner as any).selfieUrl ||
                   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
                 );
               })()}
@@ -566,7 +579,6 @@ useEffect(() => {
 
 {/* แถบรูปภาพผลงาน 1-6 รูป สำหรับลูกค้ากดดู */}
         {(() => {
-          // ดึงรูปจาก Firestore ก่อน หากไม่มีค่อยดูใน localStorage หรือ partner.imageUrl
           const localImgs = typeof window !== 'undefined' ? localStorage.getItem(`gallery_${partner.phone}`) : null;
           const parsedLocal = localImgs ? JSON.parse(localImgs) : null;
           const savedGallery: string[] = 
@@ -589,12 +601,20 @@ useEffect(() => {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      // 1. สลับรูปหน้าปกบนการ์ด
                       setActivePhotoMap((prev) => ({ ...prev, [partner.id]: imgUrl }));
+                      // 2. สั่งเปิดหน้าต่างดูรูปขยายใหญ่ (Modal) ไปที่รูปนี้ทันที
+                      setGalleryPartner({
+                        ...partner,
+                        galleryImages: savedGallery
+                      });
+                      setActiveGalleryIndex(imgIdx);
                     }}
-                    className={`relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
+                    title={`คลิกเพื่อดูรูปที่ ${imgIdx + 1} ขนาดใหญ่`}
+                    className={`relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
                       isCurrent
                         ? 'border-rose-500 scale-105 ring-2 ring-rose-500/30'
-                        : 'border-slate-700 opacity-60 hover:opacity-100'
+                        : 'border-slate-700 opacity-70 hover:opacity-100 hover:scale-105'
                     }`}
                   >
                     <img
