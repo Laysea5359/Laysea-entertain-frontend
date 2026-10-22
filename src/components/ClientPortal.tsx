@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Coins,
@@ -33,6 +33,9 @@ import { SosEmergencyModal } from './SosEmergencyModal';
 import { LiveTrackingModal } from './LiveTrackingModal';
 import { AvatarUploadModal } from './AvatarUploadModal';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
+
 
 interface ClientPortalProps {
   userSession: UserSession;
@@ -80,6 +83,45 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
       onDeleteAccount();
     }
   };
+// 🌟 State และ Effect สำหรับดึงงานนัดหมายจาก Cloud Firestore แบบ Real-time
+  const [liveBookings, setLiveBookings] = useState<Booking[]>(bookings || []);
+
+  useEffect(() => {
+    const currentClientId = userSession?.id || userSession?.phone;
+    if (!currentClientId) return;
+
+    const cleanPhone = String(userSession?.phone || '').replace(/\D/g, '');
+
+    const q = query(
+      collection(db, 'bookings'),
+      where('clientId', 'in', [
+        currentClientId,
+        'USR-CLIENT-01',
+        cleanPhone,
+        String(userSession?.phone || ''),
+        String(userSession?.id || '')
+      ].filter(Boolean))
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: any[] = [];
+        snapshot.docs.forEach((docSnap) => {
+          list.push({ ...docSnap.data(), id: docSnap.id });
+        });
+
+        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setLiveBookings(list);
+      },
+      (error) => {
+        console.warn('Firestore bookings sync error:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [userSession?.id, userSession?.phone]);
+
 // State และฟังก์ชันสำหรับแก้ไขชื่อที่ใช้เรียก (Display Name)
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameVal, setEditNameVal] = useState(userSession?.name || '');
@@ -199,7 +241,7 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
 
         {clientTab === 'bookings' && (
           <BookingsList
-            bookings={bookings}
+            bookings={liveBookings}
             onOpenSos={() => setIsSosOpen(true)}
             onBrowsePartners={() => setClientTab('catalog')}
             onOpenLiveTracking={(b) => setTrackingBooking(b)}
