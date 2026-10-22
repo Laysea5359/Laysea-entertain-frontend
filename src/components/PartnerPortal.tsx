@@ -32,6 +32,9 @@ import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { INITIAL_PARTNERS } from '../data/partners';
 import { KycModal } from './KycModal';
 import { uploadImageToCloud } from '../utils/storageUpload';
+import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+
 
 interface PartnerPortalProps {
   userSession: UserSession;
@@ -76,6 +79,42 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     const interval = setInterval(checkKycStatus, 5000);
     return () => clearInterval(interval);
   }, [userSession]);
+
+// 🌟 ดึงตารางงานของพาร์ทเนอร์จาก Cloud Firestore แบบ Real-time ทันทีที่มีการจองใหม่
+  useEffect(() => {
+    const rawId = userSession?.phone || userSession?.id;
+    if (!rawId) return;
+
+    const cleanPhone = String(rawId).replace(/\D/g, '');
+
+    const q = query(
+      collection(db, 'bookings'),
+      where('partnerId', 'in', [
+        cleanPhone,
+        rawId,
+        `partner-${cleanPhone}`,
+        String(userSession?.id || ''),
+        String(userSession?.phone || '')
+      ].filter(Boolean))
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const jobsList: any[] = [];
+        snapshot.docs.forEach((docSnap) => {
+          jobsList.push({ ...docSnap.data(), id: docSnap.id });
+        });
+        jobsList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setJobs(jobsList);
+      },
+      (error) => {
+        console.warn('Partner jobs sync error:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [userSession?.phone, userSession?.id]);
 
 // เก็บรูปภาพอัลบั้ม 1-6 รูป
   const [galleryImages, setGalleryImages] = useState<string[]>(() => {
@@ -852,13 +891,44 @@ const handleStartProgress = async (bookingId: string) => {
               </div>
 
               <div className="pt-2 border-t border-slate-800 space-y-2">
-                <button
-                  onClick={() => setIsEditAvatarOpen(true)}
-                  className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Camera className="w-3.5 h-3.5 text-amber-400" />
-                  <span>เปลี่ยนรูปโปรไฟล์พาร์ทเนอร์</span>
-                </button>
+                <label className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-all">
+            <Camera className="w-3.5 h-3.5 text-amber-400" />
+            <span>เปลี่ยนรูปโปรไฟล์พาร์ทเนอร์</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+
+                try {
+                  const pKey = userSession?.phone || userSession?.id;
+                  if (!pKey) {
+                    alert('ไม่พบข้อมูลบัญชีพาร์ทเนอร์');
+                    return;
+                  }
+
+                  // 1. อัปโหลดรูปขึ้น Firebase Cloud Storage
+                  const downloadUrl = await uploadImageToCloud(file, `partners/${pKey}/avatar_${Date.now()}`);
+
+                  // 2. บันทึกและซิงค์ลง Cloud Firestore (คอลเลกชัน users) ทันที
+                  await setDoc(doc(db, 'users', pKey), {
+                    avatarUrl: downloadUrl,
+                    imageUrl: downloadUrl,
+                    avatar: downloadUrl,
+                    updatedAt: new Date().toISOString()
+                  }, { merge: true });
+
+                  alert('เปลี่ยนรูปโปรไฟล์เรียบร้อยแล้ว!');
+                  window.location.reload();
+                } catch (err) {
+                  console.error('Update avatar error:', err);
+                  alert('เกิดข้อผิดพลาดในการเปลี่ยนรูปโปรไฟล์ กรุณาลองใหม่อีกครั้ง');
+                }
+              }}
+            />
+          </label>
 
                 <button
                   onClick={() => setShowPrivacyModal(true)}
