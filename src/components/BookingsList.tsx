@@ -441,28 +441,31 @@ const handleReportNoShow = async (bookingId: string) => {
 
               {/* Lifecycle Actions */}
               <div className="space-y-2 pt-1">
-                {/* 1. Live Tracking (when accepted or in progress) */}
-                {(booking.status === 'accepted' || booking.status === 'in_progress') && onOpenLiveTracking && (
-                  <button
-                    onClick={() => onOpenLiveTracking(booking)}
-                    className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Navigation className="w-3.5 h-3.5 animate-spin" />
-                    <span>📍 ดูพิกัดนัดพบ & แผนที่สด (Live GPS Tracking)</span>
-                  </button>
-                )}
 
-                {/* 2. Confirm Completion & Release Escrow */}
-                {booking.status === 'in_progress' && (
-                  <button
-                    onClick={() => handleConfirmCompletion(booking.id)}
-                    disabled={isSubmittingAction}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>ยืนยันจบงานเรียบร้อย & ปล่อยเงิน Escrow ให้พาร์ทเนอร์</span>
-                  </button>
-                )}
+                {/* 1. ปุ่มเปิดดูแผนที่สด (ปรับเป็นปุ่มรองสีเข้ม) */}
+          {(booking.status === 'in_progress' || booking.status === 'accepted') && onOpenLiveTracking && (
+            <button
+              type="button"
+              onClick={() => onOpenLiveTracking(booking)}
+              className="w-full py-2 bg-slate-800/90 hover:bg-slate-750 text-teal-350 border border-teal-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer mb-2"
+            >
+              <Navigation className="w-3.5 h-3.5 animate-spin text-teal-400" />
+              <span>📍 ดูพิกัดนัดพบ & แผนที่สด (Live GPS Tracking)</span>
+            </button>
+          )}
+
+          {/* 2. ปุ่มกดยืนยันจบงานและปล่อยเงิน Escrow (ปุ่มหลักสีเขียว) */}
+          {booking.status === 'in_progress' && (
+            <button
+              type="button"
+              onClick={() => handleConfirmCompletion(booking.bookingId || booking.id)}
+              disabled={isSubmittingAction}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>ยืนยันจบงานเรียบร้อย & ปล่อยเงิน Escrow ให้พาร์ทเนอร์</span>
+            </button>
+          )}
 
                 {/* 3. Safety & Dispute options bar */}
                 <div className="flex gap-2">
