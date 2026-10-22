@@ -163,10 +163,16 @@ useEffect(() => {
     };
   }, []);
 
-// ใช้เฉพาะพาร์ทเนอร์จริงจาก Cloud เท่านั้น (ตัดข้อมูลตัวอย่างออกถาวร)
-  const combinedPartners: CatalogPartner[] = approvedPartners.length > 0 
-    ? approvedPartners 
-    : (partners || []).filter((p: any) => p.isCustomPartner === true || p.id?.startsWith('USR-') || p.id?.startsWith('0'));
+// ดึงเฉพาะพาร์ทเนอร์ตัวจริง และตัดบัญชีทดสอบ Lay ออกเด็ดขาด
+  const combinedPartners: CatalogPartner[] = (approvedPartners.length > 0 ? approvedPartners : partners)
+    .filter((p: any) => {
+      const pName = String(p.name || p.nickname || '').trim().toLowerCase();
+      // ตัดบัญชีจำลอง/บัญชีทดสอบเดิมชื่อ Lay ทิ้ง
+      if (pName === 'lay' || p.id === 'partner-1' || p.id === '1') {
+        return false;
+      }
+      return true;
+    });
 
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
