@@ -13,6 +13,17 @@ import {
   HeartHandshake,
 } from 'lucide-react';
 import { Partner, Gender, LgbtqSubtype } from '../types';
+import { 
+  getFirestore, 
+  collection, 
+  onSnapshot, 
+  query, 
+  where, 
+  getDocs, 
+  doc, 
+  setDoc 
+} from 'firebase/firestore';
+import { app } from '../firebase';
 
 interface PartnerCatalogProps {
   partners: Partner[];
