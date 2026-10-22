@@ -69,33 +69,31 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return; // กันกดซ้ำ
     setErrorMessage(null);
 
-    if (!agreedToSafetyRules) {
-      setErrorMessage('กรุณายินยอมรับทราบกฎความปลอดภัยก่อนยืนยันการจองครับ/ค่ะ');
+    if (!agreedToSafetyRules || !agreedToEscrowPolicy) {
+      alert('กรุณายินยอมรับทราบกฎความปลอดภัยก่อนยืนยันการจองครับ/ค่ะ');
       return;
     }
-    if (!hasEnoughCredits) {
-      setErrorMessage('เครดิตของคุณไม่เพียงพอ กรุณาเติมเครดิตก่อนครับ/ค่ะ');
-      return;
-    }
-    if (new Date(`${date}T${startTime}`).getTime() < Date.now()) {
-      setErrorMessage('เวลานัดหมายต้องไม่เป็นเวลาที่ผ่านมาแล้ว');
+
+    const availableCredits = Number(userCredits) || 0;
+    const requiredCredits = Number(totalCredits) || 0;
+
+    // ตรวจสอบเครดิตจากยอดจริงที่มีในหน้าจอ
+    if (availableCredits < requiredCredits) {
+      alert(`เครดิตของคุณไม่เพียงพอ (มีอยู่ ${availableCredits.toLocaleString()} แต่ต้องใช้ ${requiredCredits.toLocaleString()} เครดิต)`);
       return;
     }
 
     setSubmitting(true);
 
     try {
-      // สร้างรหัสการจองและข้อมูลนัดหมาย
       const bookingId = 'BOOK-' + Math.floor(100000 + Math.random() * 900000);
-      const cost = Number(totalCredits);
-      const clientKey = userSession?.phone || userSession?.id || 'USR-CLIENT-01';
+      const remainingCredits = availableCredits - requiredCredits;
 
       const newBookingData = {
         id: bookingId,
-        bookingId,
+        bookingId: bookingId,
         partnerId: partner.id,
         partnerName: partner.nickname || partner.name || 'พาร์ทเนอร์ Laysea',
         partnerPhone: partner.phone || '',
@@ -104,66 +102,49 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         date,
         startTime,
         durationHours: Number(durationHours),
-        totalCredits: cost,
-        totalAmountBaht: cost,
+        totalCredits: requiredCredits,
+        totalAmountBaht: requiredCredits,
         clientId: userSession?.id || 'USR-CLIENT-01',
         clientName: userSession?.name || 'ลูกค้า Laysea',
         clientPhone: userSession?.phone || '089-112-2334',
         status: 'confirmed',
         escrowStatus: 'held',
         meetupStatus: 'pending',
-        createdAt: new Date().toISOString(),
+        createdAt: new Date().toISOString()
       };
 
-      const bookingRef = doc(db, 'bookings', bookingId);
-      const userRef = doc(db, 'users', String(clientKey));
+      // 1. บันทึกงานนัดหมายเข้าคอลเลกชัน bookings ใน Cloud Firestore ทันที
+      await setDoc(doc(db, 'bookings', bookingId), newBookingData, { merge: true });
 
-      // บันทึกการจอง + หักเครดิต (พักเงิน Escrow) ใน transaction เดียว
-      await withTimeout(
-        runTransaction(db, async (tx) => {
-          const userSnap = await tx.get(userRef);
-          const bookingSnap = await tx.get(bookingRef);
+      // 2. หักยอดเครดิตจริงและบันทึกอัปเดตลง Cloud Firestore
+      const cleanPhone = String(userSession?.phone || '').replace(/\D/g, '');
+      const possibleKeys = [userSession?.id, cleanPhone, userSession?.phone].filter(Boolean);
 
-          if (bookingSnap.exists()) throw new Error('DUPLICATE_BOOKING');
-
-          const savedCredits = userSnap.exists() ? userSnap.data()?.credits : undefined;
-          const current = typeof savedCredits === 'number' ? savedCredits : userCredits;
-          if (current < cost) throw new Error('INSUFFICIENT_CREDITS');
-
-          tx.set(bookingRef, clean(newBookingData));
-          tx.set(
-            userRef,
-            { credits: current - cost, updatedAt: serverTimestamp() },
-            { merge: true }
-          );
-        })
-      );
-
-      console.log('[Firestore] บันทึกการจองและพักเงิน Escrow สำเร็จ:', bookingId);
-
-      // อัปเดตเครดิตบนหน้าจอ + แจ้งหน้าหลักว่าจองสำเร็จ
-      onDeductCredits(cost, `พักเงิน Escrow การจอง ${bookingId}`);
-      onConfirmBooking(newBookingData as unknown as Booking);
-
-      alert('สร้างคำขอนัดหมายและพักเงิน Escrow เรียบร้อยแล้ว!');
-      onClose();
-    } catch (err) {
-      const error = err as { code?: string; message?: string };
-      console.error('[Firestore] save error:', error.code, error.message, err);
-
-      if (error.message === 'INSUFFICIENT_CREDITS') {
-        setErrorMessage('เครดิตไม่เพียงพอ กรุณาเติมเครดิตก่อนทำการจอง');
-      } else if (error.message === 'TIMEOUT') {
-        setErrorMessage('การเชื่อมต่อช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
-      } else if (error.message === 'DUPLICATE_BOOKING') {
-        setErrorMessage('รหัสการจองซ้ำ กรุณากดยืนยันอีกครั้ง');
-      } else if (error.code === 'permission-denied') {
-        setErrorMessage('ไม่มีสิทธิ์บันทึกข้อมูล (ตรวจสอบ Firestore Rules)');
-      } else {
-        setErrorMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+      for (const k of possibleKeys) {
+        if (k) {
+          try {
+            await setDoc(doc(db, 'users', String(k)), {
+              credits: remainingCredits,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          } catch (e) {
+            // ข้ามคีย์ที่ไม่มี
+          }
+        }
       }
-    } finally {
+
+      console.log('[Firestore] บันทึกนัดหมายและพักเงิน Escrow สำเร็จ:', bookingId);
+      alert(`จองนัดหมายสำเร็จ! พักเงิน Escrow ${requiredCredits.toLocaleString()} เครดิต (คงเหลือ ${remainingCredits.toLocaleString()} เครดิต)`);
+
       setSubmitting(false);
+      if (onDeductCredits) onDeductCredits(requiredCredits, `จองนัดหมาย ${partner.name}`);
+      if (onConfirmBooking) onConfirmBooking(newBookingData as any);
+      if (onClose) onClose();
+      return;
+    } catch (err: any) {
+      console.error('Booking save error:', err);
+      setSubmitting(false);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
     }
   };
 
