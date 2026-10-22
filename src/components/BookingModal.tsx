@@ -111,7 +111,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     } catch (fErr) {
       console.warn('Firestore direct save error, fallback to Backend:', fErr);
-     }
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setSubmitting(false);
     }
   };
 
