@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Calendar, Clock, MapPin, ShieldAlert, CheckCircle2, Coins, AlertCircle, Wine, Lock, FileText, Sparkles } from 'lucide-react';
 import { Partner, Booking, UserSession } from '../types';
 import { calculateProgressiveBookingPrice, POPULAR_DURATIONS } from '../utils/pricing';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface BookingModalProps {
@@ -15,6 +15,25 @@ interface BookingModalProps {
   onOpenWallet: () => void;
 }
 
+// วันที่ตามเวลาท้องถิ่น (toISOString ใช้ UTC ทำให้ช่วงเที่ยงคืน-ตี 7 ของไทยได้วันเมื่อวาน)
+const getLocalDateString = (d: Date = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const withTimeout = <T,>(promise: Promise<T>, ms = 15000): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('TIMEOUT')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
+
+// ตัดค่า undefined ออก เพื่อไม่ให้ Firestore error
+const clean = <T,>(obj: T): T => JSON.parse(JSON.stringify(obj));
+
 export const BookingModal: React.FC<BookingModalProps> = ({
   partner,
   userCredits,
@@ -26,7 +45,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 }) => {
   const [eventType, setEventType] = useState('ดูแลในวงสังสรรค์ / ปาร์ตี้');
   const [location, setLocation] = useState('ร้านอาหารรูฟท็อป ทองหล่อ กรุงเทพฯ');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getLocalDateString());
   const [startTime, setStartTime] = useState('19:00');
   const [durationHours, setDurationHours] = useState(3);
   const [agreedToSafetyRules, setAgreedToSafetyRules] = useState(false);
@@ -50,110 +69,103 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return; // กันกดซ้ำ
     setErrorMessage(null);
 
     if (!agreedToSafetyRules) {
-      alert('กรุณายินยอมรับทราบกฎความปลอดภัยก่อนยืนยันการจองครับ/ค่ะ');
+      setErrorMessage('กรุณายินยอมรับทราบกฎความปลอดภัยก่อนยืนยันการจองครับ/ค่ะ');
       return;
     }
     if (!hasEnoughCredits) {
-      alert('เครดิตของคุณไม่เพียงพอ กรุณาเติมเครดิตก่อนครับ/ค่ะ');
+      setErrorMessage('เครดิตของคุณไม่เพียงพอ กรุณาเติมเครดิตก่อนครับ/ค่ะ');
+      return;
+    }
+    if (new Date(`${date}T${startTime}`).getTime() < Date.now()) {
+      setErrorMessage('เวลานัดหมายต้องไม่เป็นเวลาที่ผ่านมาแล้ว');
       return;
     }
 
     setSubmitting(true);
 
     try {
+      // สร้างรหัสการจองและข้อมูลนัดหมาย
+      const bookingId = 'BOOK-' + Math.floor(100000 + Math.random() * 900000);
+      const cost = Number(totalCredits);
+      const clientKey = userSession?.phone || userSession?.id || 'USR-CLIENT-01';
 
-      // 1. Call Backend to perform Atomic Database Transaction & Double-Booking Lock
-// สร้างรหัสการจองและข้อมูลนัดหมาย
-    const bookingId = 'BOOK-' + Math.floor(100000 + Math.random() * 900000);
-    const newBookingData = {
-      id: bookingId,
-      bookingId: bookingId,
-      partnerId: partner.id,
-      partnerName: partner.nickname || partner.name || 'พาร์ทเนอร์ Laysea',
-      partnerPhone: partner.phone || '',
-      eventType,
-      location,
-      date,
-      startTime,
-      durationHours: Number(durationHours),
-      totalCredits: Number(totalCredits),
-      totalAmountBaht: Number(totalCredits),
-      clientId: userSession?.id || 'USR-CLIENT-01',
-      clientName: userSession?.name || 'ลูกค้า Laysea',
-      clientPhone: userSession?.phone || '089-112-2334',
-      status: 'confirmed',
-      escrowStatus: 'held',
-      meetupStatus: 'pending',
-      createdAt: new Date().toISOString()
-    };
+      const newBookingData = {
+        id: bookingId,
+        bookingId,
+        partnerId: partner.id,
+        partnerName: partner.nickname || partner.name || 'พาร์ทเนอร์ Laysea',
+        partnerPhone: partner.phone || '',
+        eventType,
+        location,
+        date,
+        startTime,
+        durationHours: Number(durationHours),
+        totalCredits: cost,
+        totalAmountBaht: cost,
+        clientId: userSession?.id || 'USR-CLIENT-01',
+        clientName: userSession?.name || 'ลูกค้า Laysea',
+        clientPhone: userSession?.phone || '089-112-2334',
+        status: 'confirmed',
+        escrowStatus: 'held',
+        meetupStatus: 'pending',
+        createdAt: new Date().toISOString(),
+      };
 
-    import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+      const bookingRef = doc(db, 'bookings', bookingId);
+      const userRef = doc(db, 'users', String(clientKey));
 
-const withTimeout = (promise, ms = 15000) =>
-  Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('TIMEOUT')), ms)
-    ),
-  ]);
+      // บันทึกการจอง + หักเครดิต (พักเงิน Escrow) ใน transaction เดียว
+      await withTimeout(
+        runTransaction(db, async (tx) => {
+          const userSnap = await tx.get(userRef);
+          const bookingSnap = await tx.get(bookingRef);
 
-// remove undefined values so Firestore doesn't throw
-const clean = (obj) => JSON.parse(JSON.stringify(obj));
+          if (bookingSnap.exists()) throw new Error('DUPLICATE_BOOKING');
 
-const handleConfirm = async () => {
-  if (submitting) return;          // prevent double clicks
-  setSubmitting(true);
+          const savedCredits = userSnap.exists() ? userSnap.data()?.credits : undefined;
+          const current = typeof savedCredits === 'number' ? savedCredits : userCredits;
+          if (current < cost) throw new Error('INSUFFICIENT_CREDITS');
 
-  console.log('[Confirm] clicked', { bookingId, totalCredits, userSession });
+          tx.set(bookingRef, clean(newBookingData));
+          tx.set(
+            userRef,
+            { credits: current - cost, updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        })
+      );
 
-  try {
-    const clientKey = userSession?.phone || userSession?.id;
-    if (!clientKey) throw new Error('NO_USER');
-    if (!bookingId) throw new Error('NO_BOOKING_ID');
+      console.log('[Firestore] บันทึกการจองและพักเงิน Escrow สำเร็จ:', bookingId);
 
-    const cost = Number(totalCredits);
-    const bookingRef = doc(db, 'bookings', String(bookingId));
-    const userRef = doc(db, 'users', String(clientKey));
+      // อัปเดตเครดิตบนหน้าจอ + แจ้งหน้าหลักว่าจองสำเร็จ
+      onDeductCredits(cost, `พักเงิน Escrow การจอง ${bookingId}`);
+      onConfirmBooking(newBookingData as unknown as Booking);
 
-    await withTimeout(
-      runTransaction(db, async (tx) => {
-        const userSnap = await tx.get(userRef);
-        const current = Number(userSnap.data()?.credits ?? 0);
+      alert('สร้างคำขอนัดหมายและพักเงิน Escrow เรียบร้อยแล้ว!');
+      onClose();
+    } catch (err) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Firestore] save error:', error.code, error.message, err);
 
-        if (current < cost) throw new Error('INSUFFICIENT_CREDITS');
-
-        tx.set(bookingRef, clean(newBookingData), { merge: true });
-        tx.set(
-          userRef,
-          { credits: current - cost, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
-      })
-    );
-
-    console.log('[Firestore] บันทึกการจองและพักเงิน Escrow สำเร็จ:', bookingId);
-    alert('สร้างคำขอนัดหมายและพักเงิน Escrow เรียบร้อยแล้ว!');
-    onSuccess?.();
-    onClose?.();
-  } catch (err) {
-    console.error('[Firestore] save error:', err.code, err.message, err);
-
-    if (err.message === 'INSUFFICIENT_CREDITS') {
-      alert('เครดิตไม่เพียงพอ');
-    } else if (err.message === 'TIMEOUT') {
-      alert('การเชื่อมต่อช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
-    } else if (err.code === 'permission-denied') {
-      alert('ไม่มีสิทธิ์บันทึกข้อมูล (ตรวจสอบ Firestore Rules)');
-    } else {
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+      if (error.message === 'INSUFFICIENT_CREDITS') {
+        setErrorMessage('เครดิตไม่เพียงพอ กรุณาเติมเครดิตก่อนทำการจอง');
+      } else if (error.message === 'TIMEOUT') {
+        setErrorMessage('การเชื่อมต่อช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+      } else if (error.message === 'DUPLICATE_BOOKING') {
+        setErrorMessage('รหัสการจองซ้ำ กรุณากดยืนยันอีกครั้ง');
+      } else if (error.code === 'permission-denied') {
+        setErrorMessage('ไม่มีสิทธิ์บันทึกข้อมูล (ตรวจสอบ Firestore Rules)');
+      } else {
+        setErrorMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+      }
+    } finally {
+      setSubmitting(false);
     }
-  } finally {
-    setSubmitting(false);          // runs once, in every case
-  }
-};
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
@@ -262,7 +274,7 @@ const handleConfirm = async () => {
                 type="date"
                 required
                 value={date}
-                min={new Date().toISOString().split('T')[0]}
+                min={getLocalDateString()}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
               />
