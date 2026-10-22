@@ -109,7 +109,7 @@ useEffect(() => {
     const unsubUsers = onSnapshot(
       collection(db, 'users'),
       (snapshot) => {
-        const liveList: any[] = [];
+        const partnerMap = new Map();
         snapshot.docs.forEach((docSnap) => {
           const d = docSnap.data();
           const isPartner =
@@ -120,10 +120,12 @@ useEffect(() => {
             d.isPartner === true;
 
           if (isPartner) {
-            liveList.push({ ...d, id: docSnap.id });
+            const cleanId = String(d.phone || docSnap.id).replace(/\D/g, '') || docSnap.id;
+            partnerMap.set(cleanId, { ...d, id: cleanId });
           }
         });
 
+        const liveList = Array.from(partnerMap.values());
         if (liveList.length > 0) {
           processPartnerData(liveList);
         }
@@ -161,8 +163,10 @@ useEffect(() => {
     };
   }, []);
 
-// ใช้ข้อมูลพาร์ทเนอร์จริงจาก Cloud ถ้ามีข้อมูลแล้วให้ใช้เฉพาะชุดจริง ไม่เอาตัวเดิมมาต่อซ้ำ
-const combinedPartners = approvedPartners.length > 0 ? approvedPartners : partners;
+// ใช้เฉพาะพาร์ทเนอร์จริงจาก Cloud เท่านั้น (ตัดข้อมูลตัวอย่างออกถาวร)
+  const combinedPartners: CatalogPartner[] = approvedPartners.length > 0 
+    ? approvedPartners 
+    : (partners || []).filter((p: any) => p.isCustomPartner === true || p.id?.startsWith('USR-') || p.id?.startsWith('0'));
 
   const categories = [
     { id: 'all', label: 'ทั้งหมด' },
