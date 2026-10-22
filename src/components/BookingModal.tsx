@@ -110,7 +110,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       onClose?.();
       return;
     } catch (fErr) {
-      console.warn('Firestore direct save error, fallback to Backend:', fErr);
+      console.warn('Firestore direct save error:', fErr);
       alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
     } finally {
       setSubmitting(false);
@@ -125,6 +125,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-rose-400" />
             <h3 className="text-sm font-semibold text-white">
+
+
               สร้างนัดหมายพาร์ทเนอร์ (Booking Request)
             </h3>
           </div>
