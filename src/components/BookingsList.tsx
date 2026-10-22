@@ -17,6 +17,8 @@ import {
   Ban,
 } from 'lucide-react';
 import { Booking, OrderStatus } from '../types';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface BookingsListProps {
   bookings: Booking[];
@@ -94,22 +96,25 @@ export const BookingsList: React.FC<BookingsListProps> = ({
 
   // 1. Client Confirms Job Completion -> Releases Escrow & Pays Payout
 const handleConfirmCompletion = async (bookingId: string) => {
-  if (!confirm('ยืนยันจบงานและอนุมัติปล่อยเงิน Escrow ให้พาร์ทเนอร์ ใช่หรือไม่?')) return;
-  setIsSubmittingAction(true);
-  try {
-    const backendUrl = import.meta.env.VITE_API_URL || 'https://laysea-entertain-backend-1.onrender.com';
-    const res = await fetch(`${backendUrl}/api/bookings/${bookingId}/complete`, { method: 'POST' });
-    const data = await res.json();
-    if (data.success) {
-      alert(data.message);
+    if (!confirm('ยืนยันจบงานและอนุมัติปล่อยเงิน Escrow ให้พาร์ทเนอร์ ใช่หรือไม่?')) return;
+    setIsSubmittingAction(true);
+    try {
+      // อัปเดตตรงเข้า Cloud Firestore ทันที
+      await setDoc(doc(db, 'bookings', bookingId), {
+        status: 'completed',
+        escrowStatus: 'released',
+        completedAt: new Date().toISOString()
+      }, { merge: true });
+
+      alert('ยืนยันจบงานและอนุมัติปล่อยเงิน Escrow เรียบร้อยแล้ว!');
       if (onRefreshBookings) onRefreshBookings();
+    } catch (err) {
+      console.error('Error completing booking:', err);
+      alert('เกิดข้อผิดพลาดในการปล่อยเงิน Escrow');
+    } finally {
+      setIsSubmittingAction(false);
     }
-  } catch {
-    alert('เกิดข้อผิดพลาดในการปล่อยเงิน Escrow');
-  } finally {
-    setIsSubmittingAction(false);
-  }
-};
+  };
 
   // 2. Partner No-Show Report (100% Immediate Auto-Refund)
 const handleReportNoShow = async (bookingId: string) => {

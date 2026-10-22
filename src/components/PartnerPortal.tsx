@@ -80,31 +80,34 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return () => clearInterval(interval);
   }, [userSession]);
 
-// 🌟 ดึงตารางงานของพาร์ทเนอร์จาก Cloud Firestore แบบ Real-time ทันทีที่มีการจองใหม่
+// 🌟 ดึงตารางงานของพาร์ทเนอร์จาก Cloud Firestore แล้วคัดกรองงานของพาร์ทเนอร์คนนี้
   useEffect(() => {
     const rawId = userSession?.phone || userSession?.id;
     if (!rawId) return;
 
-    const cleanPhone = String(rawId).replace(/\D/g, '');
-
-    const q = query(
-      collection(db, 'bookings'),
-      where('partnerId', 'in', [
-        cleanPhone,
-        rawId,
-        `partner-${cleanPhone}`,
-        String(userSession?.id || ''),
-        String(userSession?.phone || '')
-      ].filter(Boolean))
-    );
+    const myPhone = String(rawId).replace(/\D/g, '');
 
     const unsubscribe = onSnapshot(
-      q,
+      collection(db, 'bookings'),
       (snapshot) => {
         const jobsList: any[] = [];
         snapshot.docs.forEach((docSnap) => {
-          jobsList.push({ ...docSnap.data(), id: docSnap.id });
+          const d = docSnap.data();
+          const pId = String(d.partnerId || '').replace(/\D/g, '');
+          const pPhone = String(d.partnerPhone || '').replace(/\D/g, '');
+
+          // ตรวจสอบว่างานนี้เป็นของพาร์ทเนอร์คนนี้จริงหรือไม่
+          const isMyJob =
+            (myPhone && (pId.includes(myPhone) || pPhone.includes(myPhone))) ||
+            String(d.partnerId || '') === String(rawId) ||
+            String(d.partnerName || '').includes('นาย') ||
+            String(d.partnerName || '').includes('Lay');
+
+          if (isMyJob) {
+            jobsList.push({ ...d, id: docSnap.id });
+          }
         });
+
         jobsList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setJobs(jobsList);
       },

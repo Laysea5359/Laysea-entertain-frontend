@@ -83,34 +83,37 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
       onDeleteAccount();
     }
   };
+
 // 🌟 State และ Effect สำหรับดึงงานนัดหมายจาก Cloud Firestore แบบ Real-time
   const [liveBookings, setLiveBookings] = useState<Booking[]>(bookings || []);
 
   useEffect(() => {
-    const currentClientId = userSession?.id || userSession?.phone;
-    if (!currentClientId) return;
-
-    const cleanPhone = String(userSession?.phone || '').replace(/\D/g, '');
-
-    const q = query(
-      collection(db, 'bookings'),
-      where('clientId', 'in', [
-        currentClientId,
-        'USR-CLIENT-01',
-        cleanPhone,
-        String(userSession?.phone || ''),
-        String(userSession?.id || '')
-      ].filter(Boolean))
-    );
-
+    // ดึงงานทั้งหมดจาก Cloud Firestore แบบ Real-time
     const unsubscribe = onSnapshot(
-      q,
+      collection(db, 'bookings'),
       (snapshot) => {
         const list: any[] = [];
+        const myPhone = String(userSession?.phone || '').replace(/\D/g, '');
+        const myId = String(userSession?.id || '');
+
         snapshot.docs.forEach((docSnap) => {
-          list.push({ ...docSnap.data(), id: docSnap.id });
+          const d = docSnap.data();
+          const bClientId = String(d.clientId || '');
+          const bClientPhone = String(d.clientPhone || '').replace(/\D/g, '');
+
+          // ตรวจสอบว่าเป็นงานของลูกค้าคนนี้ หรือเป็นงานที่เพิ่งสร้าง
+          const isMyBooking =
+            (myPhone && bClientPhone.includes(myPhone)) ||
+            (myId && bClientId === myId) ||
+            bClientId === 'USR-CLIENT-01' ||
+            !d.clientId;
+
+          if (isMyBooking) {
+            list.push({ ...d, id: docSnap.id });
+          }
         });
 
+        // เรียงงานล่าสุดขึ้นบนสุด
         list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setLiveBookings(list);
       },
@@ -120,7 +123,7 @@ const [selectedGalleryViewImage, setSelectedGalleryViewImage] = useState<string 
     );
 
     return () => unsubscribe();
-  }, [userSession?.id, userSession?.phone]);
+  }, [userSession?.phone, userSession?.id]);
 
 // State และฟังก์ชันสำหรับแก้ไขชื่อที่ใช้เรียก (Display Name)
   const [isEditingName, setIsEditingName] = useState(false);
