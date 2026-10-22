@@ -90,32 +90,70 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       createdAt: new Date().toISOString()
     };
 
-    // 1. บันทึกตรงเข้า Cloud Firestore ทันที
-    try {
-      await setDoc(doc(db, 'bookings', bookingId), newBookingData, { merge: true });
-      
-      // อัปเดตหักเครดิตในกระเป๋าของลูกค้าบน Cloud
-      const clientKey = userSession?.phone || userSession?.id;
-      if (clientKey) {
-        await setDoc(doc(db, 'users', clientKey), {
-          credits: Number(userCredits) - Number(totalCredits),
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      }
+    import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 
-      console.log('[Firestore] บันทึกการจองและพักเงิน Escrow สำเร็จ:', bookingId);
-      alert('สร้างคำขอนัดหมายและพักเงิน Escrow เรียบร้อยแล้ว!');
-      setSubmitting(false);
-      onSuccess?.();
-      onClose?.();
-      return;
-    } catch (fErr) {
-      console.warn('Firestore direct save error:', fErr);
+const withTimeout = (promise, ms = 15000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('TIMEOUT')), ms)
+    ),
+  ]);
+
+// remove undefined values so Firestore doesn't throw
+const clean = (obj) => JSON.parse(JSON.stringify(obj));
+
+const handleConfirm = async () => {
+  if (submitting) return;          // prevent double clicks
+  setSubmitting(true);
+
+  console.log('[Confirm] clicked', { bookingId, totalCredits, userSession });
+
+  try {
+    const clientKey = userSession?.phone || userSession?.id;
+    if (!clientKey) throw new Error('NO_USER');
+    if (!bookingId) throw new Error('NO_BOOKING_ID');
+
+    const cost = Number(totalCredits);
+    const bookingRef = doc(db, 'bookings', String(bookingId));
+    const userRef = doc(db, 'users', String(clientKey));
+
+    await withTimeout(
+      runTransaction(db, async (tx) => {
+        const userSnap = await tx.get(userRef);
+        const current = Number(userSnap.data()?.credits ?? 0);
+
+        if (current < cost) throw new Error('INSUFFICIENT_CREDITS');
+
+        tx.set(bookingRef, clean(newBookingData), { merge: true });
+        tx.set(
+          userRef,
+          { credits: current - cost, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      })
+    );
+
+    console.log('[Firestore] บันทึกการจองและพักเงิน Escrow สำเร็จ:', bookingId);
+    alert('สร้างคำขอนัดหมายและพักเงิน Escrow เรียบร้อยแล้ว!');
+    onSuccess?.();
+    onClose?.();
+  } catch (err) {
+    console.error('[Firestore] save error:', err.code, err.message, err);
+
+    if (err.message === 'INSUFFICIENT_CREDITS') {
+      alert('เครดิตไม่เพียงพอ');
+    } else if (err.message === 'TIMEOUT') {
+      alert('การเชื่อมต่อช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+    } else if (err.code === 'permission-denied') {
+      alert('ไม่มีสิทธิ์บันทึกข้อมูล (ตรวจสอบ Firestore Rules)');
+    } else {
       alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setSubmitting(false);
     }
-  };
+  } finally {
+    setSubmitting(false);          // runs once, in every case
+  }
+};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
