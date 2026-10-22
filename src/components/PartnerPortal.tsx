@@ -56,6 +56,8 @@ export const PartnerPortal: React.FC<PartnerPortalProps> = ({
 const [showKycModal, setShowKycModal] = useState(false);
 const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 'approved' | 'rejected'>('not_submitted');
   const [isKycVerified, setIsKycVerified] = useState(false);
+  const [isLiveTrackingOpen, setIsLiveTrackingOpen] = useState(false);
+  const [selectedTrackingJob, setSelectedTrackingJob] = useState<any>(null);
 
   useEffect(() => {
     const checkKycStatus = async () => {
@@ -622,6 +624,22 @@ const handleStartProgress = async (bookingId: string) => {
                         ✅ กดตอบรับงานนี้ (Accept)
                       </button>
                     )}
+
+                  {/* 🌟 ปุ่มเปิด Live Tracking & ความปลอดภัยสดสำหรับพาร์ทเนอร์ */}
+                    {(job.status === 'accepted' || job.status === 'in_progress') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTrackingJob(job);
+                          setIsLiveTrackingOpen(true);
+                        }}
+                        className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all mb-2"
+                      >
+                        <Navigation className="w-3.5 h-3.5 animate-spin" />
+                        <span>📍 ดูพิกัดนัดพบ & แผนที่ความปลอดภัยสด (Live GPS)</span>
+                      </button>
+                    )}
+
                     {job.status === 'accepted' && (
                       <button
                         type="button"
@@ -1152,7 +1170,7 @@ const handleStartProgress = async (bookingId: string) => {
           </div>
         </div>
       )}
-{/* Modal ยื่นเอกสารบัตรประชาชน */}
+   {/* Modal ยื่นเอกสารบัตรประชาชน */}
       {showKycModal && (
         <KycModal
           userSession={userSession}
@@ -1161,6 +1179,19 @@ const handleStartProgress = async (bookingId: string) => {
             setShowKycModal(false);
             alert('🎉 ยื่นเอกสาร KYC สำเร็จแล้ว เจ้าหน้าที่จะตรวจสอบและอนุมัติภายใน 24 ชม.');
           }}
+        />
+      )}
+
+{/* 🌟 Modal แสดงแผนที่และพิกัดความปลอดภัยสดสำหรับพาร์ทเนอร์ */}
+      {isLiveTrackingOpen && selectedTrackingJob && (
+        <LiveTrackingModal
+          booking={selectedTrackingJob}
+          userRole="partner"
+          onClose={() => {
+            setIsLiveTrackingOpen(false);
+            setSelectedTrackingJob(null);
+          }}
+          onOpenSos={() => onTriggerSos('ฉุกเฉินระหว่างปฏิบัติงาน')}
         />
       )}
     </div>
