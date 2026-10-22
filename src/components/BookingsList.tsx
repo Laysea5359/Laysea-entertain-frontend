@@ -17,7 +17,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { Booking, OrderStatus } from '../types';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface BookingsListProps {
@@ -200,18 +200,56 @@ const handleReportNoShow = async (bookingId: string) => {
     }
   };
 
-// ฟังก์ชันสำหรับลบตารางนัดหมาย
-  const handleDeleteBooking = async (bookingId: string) => {
-    if (!confirm('คุณต้องการลบรายการนัดหมายนี้ใช่หรือไม่?')) return;
+// ฟังก์ชันตรวจสอบว่านัดหมายนี้สามารถลบได้หรือไม่ (ต้องเสร็จสิ้นแล้ว หรือเวลาจริงผ่านไปแล้ว)
+  const canDeleteBooking = (b: any): boolean => {
+    if (!b) return false;
+    // 1. ถ้างานจบแล้ว (completed), ยกเลิกแล้ว (cancelled), หรือรีวิวแล้ว สามารถลบได้ทันที
+    if (['completed', 'cancelled', 'reviewed'].includes(b.status)) {
+      return true;
+    }
+
+    // 2. ตรวจสอบเวลาจริง: ถ้าเวลาเริ่มงาน + ระยะเวลาชั่วโมง ได้ผ่านพ้นเวลาปัจจุบันไปแล้ว
+    try {
+      if (b.date && b.startTime) {
+        const [hours, minutes] = String(b.startTime).split(':').map(Number);
+        const bookingStartDate = new Date(b.date);
+        bookingStartDate.setHours(hours || 0, minutes || 0, 0, 0);
+
+        const durationMs = (Number(b.durationHours) || 1) * 60 * 60 * 1000;
+        const bookingEndDate = new Date(bookingStartDate.getTime() + durationMs);
+
+        if (Date.now() > bookingEndDate.getTime()) {
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('Check booking time error:', e);
+    }
+
+    return false;
+  };
+
+  // ฟังก์ชันสั่งลบตารางนัดหมาย
+  const handleDeleteBooking = async (b: any) => {
+    const bookingId = b?.bookingId || b?.id;
+    if (!bookingId) return;
+
+    if (!canDeleteBooking(b)) {
+      alert('⚠️ ไม่สามารถลบได้: นัดหมายนี้ยังไม่เสร็จสิ้น หรือยังไม่ถึงกำหนดเวลาสิ้นสุดงานจริง');
+      return;
+    }
+
+    if (!confirm('ยืนยันที่จะลบรายการนัดหมายนี้ออกจากประวัติของคุณใช่หรือไม่?')) return;
+
     try {
       await deleteDoc(doc(db, 'bookings', bookingId));
-      alert('ลบตารางนัดหมายเรียบร้อยแล้ว');
+      alert('ลบรายการนัดหมายเรียบร้อยแล้ว');
       if (typeof onRefreshBookings === 'function') {
         onRefreshBookings();
       }
     } catch (err) {
       console.error('Delete booking error:', err);
-      alert('เกิดข้อผิดพลาดในการลบตารางนัดหมาย');
+      alert('เกิดข้อผิดพลาดในการลบรายการ');
     }
   };
 
@@ -294,16 +332,24 @@ const handleReportNoShow = async (bookingId: string) => {
                 </button>
               </div>
 
-       {/* 🌟 เพิ่มปุ่มลบรายการตรงนี้ (วางต่อลงมา) */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => handleDeleteBooking(booking.bookingId || booking.id)}
-            className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
-          >
-            🗑️ ลบรายการนี้
-          </button>
-        </div>
+       {/* แสดงปุ่มลบเฉพาะเมื่องานเสร็จสิ้นหรือเลยกำหนดเวลาแล้วเท่านั้น */}
+        {canDeleteBooking(booking) ? (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => handleDeleteBooking(booking)}
+              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
+            >
+              🗑️ ลบประวัติรายการนี้
+            </button>
+          </div>
+        ) : (
+          <div className="pt-1">
+            <span className="text-[10px] text-slate-500 flex items-center gap-1 italic">
+              🔒 รายการนี้จะลบได้เมื่อเสร็จสิ้นงานหรือพ้นกำหนดเวลานัดหมาย
+            </span>
+          </div>
+        )}
 
               {/* Details grid */}
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
