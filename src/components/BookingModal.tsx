@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Calendar, Clock, MapPin, ShieldAlert, CheckCircle2, Coins, AlertCircle, Wine, Lock, FileText, Sparkles } from 'lucide-react';
 import { Partner, Booking, UserSession } from '../types';
 import { calculateProgressiveBookingPrice, POPULAR_DURATIONS } from '../utils/pricing';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface BookingModalProps {
   partner: Partner | null;
@@ -63,6 +65,53 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     try {
       // 1. Call Backend to perform Atomic Database Transaction & Double-Booking Lock
+// สร้างรหัสการจองและข้อมูลนัดหมาย
+    const bookingId = 'BOOK-' + Math.floor(100000 + Math.random() * 900000);
+    const newBookingData = {
+      id: bookingId,
+      bookingId: bookingId,
+      partnerId: partner.id,
+      partnerName: partner.nickname || partner.name || 'พาร์ทเนอร์ Laysea',
+      partnerPhone: partner.phone || '',
+      eventType,
+      location,
+      date,
+      startTime,
+      durationHours: Number(durationHours),
+      totalCredits: Number(totalCredits),
+      totalAmountBaht: Number(totalCredits),
+      clientId: userSession?.id || 'USR-CLIENT-01',
+      clientName: userSession?.name || 'ลูกค้า Laysea',
+      clientPhone: userSession?.phone || '089-112-2334',
+      status: 'confirmed',
+      escrowStatus: 'held',
+      meetupStatus: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    // 1. บันทึกตรงเข้า Cloud Firestore ทันที
+    try {
+      await setDoc(doc(db, 'bookings', bookingId), newBookingData, { merge: true });
+      
+      // อัปเดตหักเครดิตในกระเป๋าของลูกค้าบน Cloud
+      const clientKey = userSession?.phone || userSession?.id;
+      if (clientKey) {
+        await setDoc(doc(db, 'users', clientKey), {
+          credits: Number(userCredits) - Number(totalCredits),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+
+      console.log('[Firestore] บันทึกการจองและพักเงิน Escrow สำเร็จ:', bookingId);
+      alert('สร้างคำขอนัดหมายและพักเงิน Escrow เรียบร้อยแล้ว!');
+      setSubmitting(false);
+      onSuccess?.();
+      onClose?.();
+      return;
+    } catch (fErr) {
+      console.warn('Firestore direct save error, fallback to Backend:', fErr);
+    }
+
       const res = await fetch('https://laysea-entertain-backend-1.onrender.com/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
