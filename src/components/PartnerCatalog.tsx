@@ -451,23 +451,25 @@ useEffect(() => {
                 const localFirstGallery = Array.isArray(parsedLocal) && parsedLocal.length > 0 ? parsedLocal[0] : null;
 
                 // ลำดับการแสดงผล:
-                // อันดับ 1: รูปที่ผู้ใช้คลิกเลือกจากแถบรูปเล็กด้านล่าง (activePhotoMap)
-                // อันดับ 2: รูปโปรไฟล์จริงของพาร์ทเนอร์ (avatarUrl / localAvatar / imageUrl / selfieUrl)
-                // อันดับ 3: ถ้ารูปโปรไฟล์ไม่มี ค่อยเอารูปแรกในอัลบั้มมาแสดง
-                return (
-                  activePhotoMap[partner.id] ||
-                  localAvatar ||
-                  partner.avatarUrl ||
-                  partner.profileImage ||
-                  (partner.imageUrl && !partner.imageUrl.includes('unsplash.com') ? partner.imageUrl : null) ||
-                  (partner as any).selfieUrl ||
-                  (Array.isArray(partner.gallery) && partner.gallery[0]) ||
-                  (Array.isArray((partner as any).galleryImages) && (partner as any).galleryImages[0]) ||
-                  localFirstGallery ||
-                  partner.imageUrl ||
-                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
-                );
-              })()}
+        // 1. รูปที่คลิกเลือกจากแถบรูปเล็ก
+        // 2. รูปโปรไฟล์จริงของพาร์ทเนอร์ (ตรวจทุกชื่อฟิลด์ที่เป็นไปได้)
+        // 3. หากไม่มีรูปโปรไฟล์ ค่อยเอารูปแรกในอัลบั้มมาแสดง
+        return (
+          activePhotoMap[partner.id] ||
+          (partner as any).photoURL ||
+          partner.avatarUrl ||
+          partner.profileImage ||
+          localAvatar ||
+          (typeof window !== 'undefined' && partner?.phone ? localStorage.getItem(`partner_profile_image_${partner.phone}`) : null) ||
+          (typeof window !== 'undefined' ? localStorage.getItem('partner_profile_photo') : null) ||
+          (partner.imageUrl && !partner.imageUrl.includes('unsplash.com') ? partner.imageUrl : null) ||
+          (partner as any).selfieUrl ||
+          (Array.isArray((partner as any).galleryImages) && (partner as any).galleryImages[0]) ||
+          (Array.isArray(partner.gallery) && partner.gallery[0]) ||
+          localFirstGallery ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
+        );
+      })()}
               alt={partner.name}
               className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
               loading="lazy"

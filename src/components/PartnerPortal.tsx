@@ -179,7 +179,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       img.onload = async () => {
         // ย่อขนาดรูปภาพให้พอดี (กว้างสูงสุด 1000px) เพื่อให้ภาพคมชัดและขนาดไฟล์เล็ก
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1000;
+        const MAX_WIDTH = 600;
         let width = img.width;
         let height = img.height;
 
@@ -194,7 +194,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
         ctx?.drawImage(img, 0, 0, width, height);
 
         // แปลงภาพเป็น Base64
-        const base64Url = canvas.toDataURL('image/jpeg', 0.82);
+        const base64Url = canvas.toDataURL('image/jpeg', 0.65);
 
         // รวมรูปใหม่เข้าอัลบั้ม (สูงสุด 6 รูป)
         const updated = [...galleryImages, base64Url].slice(0, 6);
