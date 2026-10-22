@@ -64,6 +64,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setSubmitting(true);
 
     try {
+
       // 1. Call Backend to perform Atomic Database Transaction & Double-Booking Lock
 // สร้างรหัสการจองและข้อมูลนัดหมาย
     const bookingId = 'BOOK-' + Math.floor(100000 + Math.random() * 900000);
@@ -110,49 +111,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     } catch (fErr) {
       console.warn('Firestore direct save error, fallback to Backend:', fErr);
-    }
-
-      const res = await fetch('https://laysea-entertain-backend-1.onrender.com/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          partnerId: partner.id,
-          eventType,
-          location,
-          date,
-          startTime,
-          durationHours,
-          totalCredits,
-          clientId: userSession?.id || 'USR-CLIENT-01',
-          clientName: userSession?.name || 'คุณลูกค้า',
-          clientPhone: userSession?.phone || '089-112-2334',
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.status === 409) {
-        // Double-booking conflict caught by server lock
-        setErrorMessage(data.message || 'ขออภัย พาร์ทเนอร์มีคิวงานที่ยืนยันแล้วในช่วงเวลาดังกล่าว');
-        setSubmitting(false);
-        return;
-      }
-
-      if (!res.ok || !data.success) {
-        setErrorMessage(data.error || 'เกิดข้อผิดพลาดในการสร้างคำขอนัดหมาย');
-        setSubmitting(false);
-        return;
-      }
-
-      // 2. Deduct credits from user wallet
-      onDeductCredits(totalCredits, `พักเงินในระบบ Escrow นัดหมาย ${partner.name} (${durationHours} ชม.)`);
-      onConfirmBooking(data.booking);
-      alert('สร้างคำขอนัดหมายเรียบร้อย! เงินของคุณถูกพักไว้ในระบบ Escrow ปลอดภัย และระบบกำลังส่งการแจ้งเตือนไปยังพาร์ทเนอร์เพื่อตอบรับภายใน 5 นาที');
-      onClose();
-    } catch {
-      setErrorMessage('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setSubmitting(false);
+     }
     }
   };
 
