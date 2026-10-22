@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Calendar, Clock, MapPin, ShieldAlert, CheckCircle2, Coins, AlertCircle, Wine, Lock, FileText, Sparkles } from 'lucide-react';
 import { Partner, Booking, UserSession } from '../types';
 import { calculateProgressiveBookingPrice, POPULAR_DURATIONS } from '../utils/pricing';
-import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface BookingModalProps {
