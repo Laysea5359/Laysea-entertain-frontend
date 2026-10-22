@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { Partner, Gender, LgbtqSubtype } from '../types';
 import { 
-  getFirestore, 
   collection, 
   onSnapshot, 
   query, 
@@ -23,7 +22,7 @@ import {
   doc, 
   setDoc 
 } from 'firebase/firestore';
-import { app } from '../firebase';
+import { db } from '../firebase';
 
 interface PartnerCatalogProps {
   partners: Partner[];
@@ -107,7 +106,6 @@ useEffect(() => {
     };
 
     // 1. ดึงข้อมูลสดแบบ Real-time จาก Cloud Firestore (คอลเลกชัน users)
-    const db = getFirestore(app);
     const unsubUsers = onSnapshot(
       collection(db, 'users'),
       (snapshot) => {
