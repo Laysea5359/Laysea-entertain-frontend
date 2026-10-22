@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Calendar,
   Clock,
@@ -252,6 +252,63 @@ const handleReportNoShow = async (bookingId: string) => {
       alert('เกิดข้อผิดพลาดในการลบรายการ');
     }
   };
+
+// คำนวณเวลาที่เหลือสำหรับ Auto-Release (10 นาทีหลังสิ้นสุดชั่วโมงงาน)
+  const getAutoReleaseInfo = (booking: any) => {
+    if (booking.status !== 'in_progress') return null;
+
+    try {
+      if (booking.date && booking.startTime) {
+        const [hours, minutes] = String(booking.startTime).split(':').map(Number);
+        const start = new Date(booking.date);
+        start.setHours(hours || 0, minutes || 0, 0, 0);
+
+        // เวลาจบงานตามชั่วโมงจ้าง
+        const durationMs = (Number(booking.durationHours) || 1) * 60 * 60 * 1000;
+        const workEndTime = start.getTime() + durationMs;
+
+        // บวกเวลาเผื่อให้ลูกค้ากดยืนยันอีก 10 นาที (10 * 60 * 1000 ms)
+        const autoReleaseDeadline = workEndTime + (10 * 60 * 1000);
+        const remainingMs = autoReleaseDeadline - Date.now();
+
+        return {
+          isOverWorkTime: Date.now() >= workEndTime,
+          isDeadlinePassed: remainingMs <= 0,
+          remainingMinutes: Math.max(0, Math.ceil(remainingMs / 60000))
+        };
+      }
+    } catch (e) {
+      console.warn('Auto release time calculation error:', e);
+    }
+    return null;
+  };
+
+  // ดักฟังสั่งปล่อยเงินอัตโนมัติเมื่อครบ 10 นาที
+  useEffect(() => {
+    const timer = setInterval(() => {
+      (bookings || []).forEach(async (b: any) => {
+        if (b.status === 'in_progress') {
+          const info = getAutoReleaseInfo(b);
+          if (info && info.isDeadlinePassed) {
+            try {
+              const bId = b.bookingId || b.id;
+              await setDoc(doc(db, 'bookings', bId), {
+                status: 'completed',
+                escrowStatus: 'released',
+                autoCompleted: true,
+                completedAt: new Date().toISOString()
+              }, { merge: true });
+              console.log('[Auto-Release] ปล่อยเงิน Escrow อัตโนมัติเรียบร้อย:', bId);
+            } catch (err) {
+              console.error('Auto release error:', err);
+            }
+          }
+        }
+      });
+    }, 15000); // ตรวจสอบทุก 15 วินาที
+
+    return () => clearInterval(timer);
+  }, [bookings]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
