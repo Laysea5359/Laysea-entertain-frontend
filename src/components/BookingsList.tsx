@@ -17,7 +17,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { Booking, OrderStatus } from '../types';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface BookingsListProps {
@@ -197,6 +197,21 @@ const handleReportNoShow = async (bookingId: string) => {
       alert('เกิดข้อผิดพลาดในการส่งข้อพิพาท');
     } finally {
       setIsSubmittingAction(false);
+    }
+  };
+
+// ฟังก์ชันสำหรับลบตารางนัดหมาย
+  const handleDeleteBooking = async (bookingId: string) => {
+    if (!confirm('คุณต้องการลบรายการนัดหมายนี้ใช่หรือไม่?')) return;
+    try {
+      await deleteDoc(doc(db, 'bookings', bookingId));
+      alert('ลบตารางนัดหมายเรียบร้อยแล้ว');
+      if (typeof onRefreshBookings === 'function') {
+        onRefreshBookings();
+      }
+    } catch (err) {
+      console.error('Delete booking error:', err);
+      alert('เกิดข้อผิดพลาดในการลบตารางนัดหมาย');
     }
   };
 
