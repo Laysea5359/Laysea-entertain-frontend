@@ -556,37 +556,50 @@ useEffect(() => {
             </div>
 
 {/* แถบรูปภาพผลงาน 1-6 รูป สำหรับลูกค้ากดดู */}
-          {(() => {
-            const savedGallery = localStorage.getItem(`gallery_${partner.phone}`)
-              ? JSON.parse(localStorage.getItem(`gallery_${partner.phone}`) || '[]')
-              : (partner.gallery || [partner.imageUrl]);
+        {(() => {
+          // ดึงรูปจาก Firestore ก่อน หากไม่มีค่อยดูใน localStorage หรือ partner.imageUrl
+          const localImgs = typeof window !== 'undefined' ? localStorage.getItem(`gallery_${partner.phone}`) : null;
+          const parsedLocal = localImgs ? JSON.parse(localImgs) : null;
+          const savedGallery: string[] = 
+            (partner.galleryImages && partner.galleryImages.length > 0 ? partner.galleryImages : null) ||
+            (Array.isArray(parsedLocal) && parsedLocal.length > 0 ? parsedLocal : null) ||
+            (partner.gallery && partner.gallery.length > 0 ? partner.gallery : null) ||
+            (partner.imageUrl ? [partner.imageUrl] : []);
 
-            if (!savedGallery || savedGallery.length <= 1) return null;
+          if (!savedGallery || savedGallery.length === 0) return null;
 
-            return (
-              <div className="px-3 py-2 bg-slate-950/80 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                <span className="text-[10px] text-slate-400 shrink-0 font-medium mr-1">📸 รูป:</span>
-                {savedGallery.slice(0, 6).map((imgUrl: string, imgIdx: number) => {
-                  const isCurrent = (activePhotoMap[partner.id] || partner.imageUrl) === imgUrl;
-                  return (
-                    <button
-                      key={imgIdx}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActivePhotoMap((prev) => ({ ...prev, [partner.id]: imgUrl }));
-                      }}
-                      className={`relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                        isCurrent ? 'border-rose-500 scale-105 ring-2 ring-rose-500/30' : 'border-slate-700 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={imgUrl} alt={`รูปที่ ${imgIdx + 1}`} className="w-full h-full object-cover" />
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })()}
+          return (
+            <div className="px-3 py-2 bg-slate-950/80 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+              <span className="text-[10px] text-slate-400 shrink-0 font-medium mr-1">📷 รูป:</span>
+              {savedGallery.slice(0, 6).map((imgUrl: string, imgIdx: number) => {
+                const currentActive = activePhotoMap[partner.id] || savedGallery[0];
+                const isCurrent = currentActive === imgUrl;
+                return (
+                  <button
+                    key={imgIdx}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActivePhotoMap((prev) => ({ ...prev, [partner.id]: imgUrl }));
+                    }}
+                    className={`relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
+                      isCurrent
+                        ? 'border-rose-500 scale-105 ring-2 ring-rose-500/30'
+                        : 'border-slate-700 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={imgUrl}
+                      alt={`รูปที่ ${imgIdx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+
             {/* Profile Content */}
             <div className="p-4 flex-1 flex flex-col justify-between space-y-3.5">
               <div>
@@ -754,33 +767,61 @@ useEffect(() => {
             </div>
 
             {/* แสดงรูปภาพขนาดใหญ่ */}
-            <div className="w-full h-72 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
-              <img
-                src={((galleryPartner as any).galleryImages || [])[activeGalleryIndex] || galleryPartner.imageUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'}
-                alt={`Photo ${activeGalleryIndex + 1}`}
-                className="w-full h-full object-contain"
-              />
-            </div>
+          {(() => {
+            // ดึงรูปรวมจากทุกแหล่งที่เป็นไปได้
+            const localImgs = typeof window !== 'undefined' && galleryPartner?.phone 
+              ? localStorage.getItem(`gallery_${galleryPartner.phone}`) 
+              : null;
+            const parsedLocal = localImgs ? JSON.parse(localImgs) : null;
+            
+            const allImages: string[] = 
+              ((galleryPartner as any)?.galleryImages && (galleryPartner as any).galleryImages.length > 0 ? (galleryPartner as any).galleryImages : null) ||
+              (Array.isArray(parsedLocal) && parsedLocal.length > 0 ? parsedLocal : null) ||
+              ((galleryPartner as any)?.gallery && (galleryPartner as any).gallery.length > 0 ? (galleryPartner as any).gallery : null) ||
+              (galleryPartner?.imageUrl ? [galleryPartner.imageUrl] : []) ||
+              (galleryPartner?.image ? [galleryPartner.image] : []);
 
-            {/* แถบ Thumbnail รูปย่อย 1-6 รูป ด้านล่างสำหรับกดเปลี่ยนรูป */}
-            {((galleryPartner as any).galleryImages || []).length > 1 && (
-              <div className="flex gap-2 overflow-x-auto py-1 justify-center">
-                {((galleryPartner as any).galleryImages || []).map((imgUrl: string, idx: number) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setActiveGalleryIndex(idx)}
-                    className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
-                      activeGalleryIndex === idx 
-                        ? 'border-rose-500 scale-105 shadow-md shadow-rose-950/50' 
-                        : 'border-slate-800 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <img src={imgUrl} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
+            const currentImg = allImages[activeGalleryIndex] || allImages[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+
+            return (
+              <>
+                <div className="w-full h-72 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
+                  <img
+                    src={currentImg}
+                    alt={`Photo ${activeGalleryIndex + 1}`}
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+
+                {/* แถบ Thumbnail รูปรวม 1-6 รูป ด้านล่างสำหรับกดเปลี่ยนรูป */}
+                {allImages.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto py-1 justify-center">
+                    {allImages.map((imgUrl: string, idx: number) => {
+                      const isCurrent = activeGalleryIndex === idx;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setActiveGalleryIndex(idx)}
+                          className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
+                            isCurrent
+                              ? 'border-rose-500 scale-105 shadow-md shadow-rose-950/50'
+                              : 'border-slate-800 opacity-60 hover:opacity-100'
+                          }`}
+                        >
+                          <img
+                            src={imgUrl}
+                            alt={`Thumb ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
             <button
               type="button"
