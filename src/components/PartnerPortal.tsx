@@ -350,6 +350,34 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [activeTrackingJob, setActiveTrackingJob] = useState<Booking | null>(null);
 
+// --- ประกาศตัวแปรคำนวณงานและรายได้ระดับบนสุดของคอมโพเนนต์ ---
+  const activeJobs = (jobs || []).filter((j: any) => 
+    !j?.isDeletedByPartner && 
+    ['pending', 'requested', 'accepted', 'confirmed', 'in_progress'].includes(j?.status)
+  );
+
+  const completedJobsList = (jobs || []).filter((j: any) => 
+    !j?.isDeletedByPartner && 
+    (j?.status === 'completed' || j?.status === 'finished' || j?.paymentStatus === 'paid' || j?.isReleased === true)
+  );
+
+  const realGrossEarnings = completedJobsList.reduce((sum: number, j: any) => {
+    const duration = Number(j?.durationHours || 2);
+    const rawPrice = Number(
+      j?.totalAmountBaht ||
+      j?.totalCredits || 
+      j?.totalPrice || 
+      j?.totalAmount || 
+      (j?.pricePerHour ? j.pricePerHour * duration : 0) || 
+      j?.price || 
+      0
+    );
+    return sum + Math.round(rawPrice * 0.80);
+  }, 0);
+
+  const realTaxDeduction = Number((realGrossEarnings * 0.03).toFixed(2));
+  const realNetPayout = Number((realGrossEarnings - realTaxDeduction).toFixed(2));
+
   // Fetch partner jobs from backend
   const fetchPartnerJobs = async () => {
     setIsLoadingJobs(true);
