@@ -233,7 +233,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
   useEffect(() => {
     const upcomingJob = activeJobs.find((j: any) => {
       if (j.status !== 'accepted' && j.status !== 'confirmed') return false;
-      const targetDateStr = j.date || '2026-10-23';
+      const targetDateStr = job.date || new Date().toLocaleDateString('en-CA');
       const rawTime = (j.startTime || '19:00').replace('.', ':').trim();
       const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
       const targetTime = new Date(`${targetDateStr}T${targetTimeStr}`).getTime();
@@ -778,7 +778,7 @@ const handleStartProgress = async (bookingId: string) => {
             if (job.status !== 'accepted' && job.status !== 'confirmed') return null;
 
             // ตรวจสอบวันและเวลานัดหมาย
-            const targetDateStr = job.date || '2026-10-23';
+            const targetDateStr = j.date || new Date().toLocaleDateString('en-CA');
             const rawTime = (job.startTime || '19:00').replace('.', ':').trim();
             const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
             

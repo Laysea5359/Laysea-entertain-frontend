@@ -44,9 +44,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   onOpenWallet,
 }) => {
   const [eventType, setEventType] = useState('ดูแลในวงสังสรรค์ / ปาร์ตี้');
-  const [location, setLocation] = useState('ร้านอาหารรูฟท็อป ทองหล่อ กรุงเทพฯ');
-  const [date, setDate] = useState(getLocalDateString());
-  const [startTime, setStartTime] = useState('19:00');
+  const [location, setLocation] = useState('');
+  const [date, setDate] = useState<string>(() => {
+    return new Date().toLocaleDateString('en-CA');
+  });
+  const [startTime, setStartTime] = useState<string>(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1);
+    const hours = String(d.getHours()).padStart(2, '0');
+    return `${hours}:00`;
+  });
   const [durationHours, setDurationHours] = useState(3);
   const [agreedToSafetyRules, setAgreedToSafetyRules] = useState(false);
   const [agreedToEscrowPolicy, setAgreedToEscrowPolicy] = useState(true);
@@ -99,6 +106,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
+   // ตรวจสอบความถูกต้องของวันและเวลา (ป้องกันการจองย้อนหลัง)
+    const selectedDateTimeStr = `${date}T${startTime.length === 5 ? startTime + ':00' : startTime}`;
+    const selectedTime = new Date(selectedDateTimeStr).getTime();
+    const currentTime = Date.now();
+
+    if (isNaN(selectedTime) || selectedTime < currentTime) {
+      alert('ไม่สามารถจองวันหรือเวลาย้อนหลังได้ กรุณาเลือกวันและเวลาที่เป็นปัจจุบันหรือล่วงหน้าครับ');
+      return;
+    }
+
     const availableCredits = Number(userCredits) || 0;
     const requiredCredits = Number(totalCredits) || 0;
 
@@ -127,9 +144,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         durationHours: Number(durationHours),
         totalCredits: requiredCredits,
         totalAmountBaht: requiredCredits,
-        clientId: userSession?.id || 'USR-CLIENT-01',
-        clientName: userSession?.name || 'ลูกค้า Laysea',
-        clientPhone: userSession?.phone || '089-112-2334',
+        clientId: userSession?.id || userSession?.uid || '',
+        clientName: userSession?.name || userSession?.displayName || 'ลูกค้าทั่วไป',
+        clientPhone: userSession?.phone || userSession?.phoneNumber || '',
         status: 'pending', // ให้เป็นสถานะรอพาร์ทเนอร์กดรับงาน
         escrowStatus: 'held',
         meetupStatus: 'pending',
@@ -278,7 +295,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 type="date"
                 required
                 value={date}
-                min={getLocalDateString()}
+                min={new Date().toLocaleDateString('en-CA')} // ล็อกวันตามเวลาท้องถิ่น YYYY-MM-DD
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
               />
@@ -291,11 +308,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 type="time"
                 required
                 value={startTime}
+                min={
+                  date === new Date().toLocaleDateString('en-CA')
+                    ? new Date().toTimeString().slice(0, 5)
+                    : undefined
+                }
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
               />
-            </div>
-          </div>
 
           {/* Duration with Progressive Discounts */}
           <div>
