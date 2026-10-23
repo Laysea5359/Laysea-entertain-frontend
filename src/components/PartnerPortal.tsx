@@ -34,6 +34,7 @@ import { KycModal } from './KycModal';
 import { uploadImageToCloud } from '../utils/storageUpload';
 import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { notifyEvent } from '../utils/notification';
 
 
 interface PartnerPortalProps {
@@ -110,7 +111,46 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
         // เรียงจากงานล่าสุดขึ้นก่อน
         jobsList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setJobs(jobsList);
+
+        // --- ระบบแจ้งเตือนเสียง + สั่น Real-time ฝั่งพาร์ทเนอร์ ---
+        // 1. ตรวจสอบว่ามีงานใหม่เข้ามาที่ยังรอรับ (pending) หรือไม่
+        const hasIncomingJob = jobsList.some(
+          (j: any) => j.status === 'pending' || j.status === 'requested'
+        );
+
+        // 2. ตรวจสอบว่ามีงานที่ลูกค้ากดยืนยันปล่อยเงิน/เสร็จสิ้น หรือไม่
+        const hasMoneyReleased = jobsList.some(
+          (j: any) => 
+            j.status === 'completed' || 
+            j.status === 'finished' || 
+            j.paymentStatus === 'paid' || 
+            j.isReleased === true
+        );
+
+        // สั่งสั่นและส่งเสียงเตือน
+        if (hasIncomingJob) {
+          // มีงานใหม่เข้า: สั่นกระชั้น + ส่งเสียงเตือนงานเข้า
+          if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate([400, 200, 400, 200, 600]);
+          }
+          try {
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+            audio.volume = 0.9;
+            audio.play().catch(() => {});
+          } catch (e) {}
+        } else if (hasMoneyReleased) {
+          // ลูกค้าปล่อยเงินจบงาน: สั่นยาว + เสียงเงินเข้า (Cash register)
+          if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate([200, 100, 200, 100, 500]);
+          }
+          try {
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+            audio.volume = 0.9;
+            audio.play().catch(() => {});
+          } catch (e) {}
+        }
       },
+
       (error) => {
         console.warn('Partner jobs sync error:', error);
       }
