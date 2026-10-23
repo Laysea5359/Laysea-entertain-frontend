@@ -454,18 +454,32 @@ const handleReportNoShow = async (bookingId: string) => {
             </button>
           )}
 
-          {/* 2. ปุ่มกดยืนยันจบงานและปล่อยเงิน Escrow (ปุ่มหลักสีเขียว) */}
-          {booking.status === 'in_progress' && (
-            <button
-              type="button"
-              onClick={() => handleConfirmCompletion(booking.bookingId || booking.id)}
-              disabled={isSubmittingAction}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>ยืนยันจบงานเรียบร้อย & ปล่อยเงิน Escrow ให้พาร์ทเนอร์</span>
-            </button>
-          )}
+          {/* 2. ปุ่มกดยืนยันจบงานและปล่อยเงิน Escrow (ปุ่มหลักสีเขียว - แสดงเมื่อถึงเวลาเริ่มงานแล้วเท่านั้น) */}
+{(() => {
+  if (booking.status !== 'in_progress') return null;
+
+  // ตรวจสอบเวลาเริ่มงานเทียบกับเวลาปัจจุบัน
+  const bookingTimeStr = `${booking.date || ''}T${booking.startTime || '00:00'}`;
+  const bookingStartTime = new Date(bookingTimeStr).getTime();
+  const now = Date.now();
+  const hasStarted = !isNaN(bookingStartTime) ? now >= bookingStartTime : true;
+
+  return hasStarted ? (
+    <button
+      type="button"
+      onClick={() => handleConfirmCompletion(booking.bookingId || booking.id)}
+      disabled={isSubmittingAction}
+      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+    >
+      <CheckCircle2 className="w-4 h-4" />
+      <span>ยืนยันจบงานเรียบร้อย & ปล่อยเงิน Escrow ให้พาร์ทเนอร์</span>
+    </button>
+  ) : (
+    <div className="w-full py-2.5 px-3 bg-slate-900/80 border border-slate-700/60 rounded-xl text-center text-xs text-slate-400 font-medium">
+      ⏳ รอดำเนินการตามเวลานัดหมาย (สามารถกดยืนยันจบงานได้เมื่อถึงเวลาเริ่มงาน)
+    </div>
+  );
+})()}
 
                 {/* 3. Safety & Dispute options bar */}
                 <div className="flex gap-2">
