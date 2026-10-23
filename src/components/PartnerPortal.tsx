@@ -156,6 +156,46 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       }
     );
 
+// --- 1. กรองงานตามสถานะต่างๆ ---
+  const activeJobs = jobs.filter((j: any) => 
+    !j.isDeletedByPartner && 
+    ['pending', 'requested', 'accepted', 'confirmed', 'in_progress'].includes(j.status)
+  );
+
+  const completedJobsList = jobs.filter((j: any) => 
+    !j.isDeletedByPartner && 
+    (j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased === true)
+  );
+
+  // --- 2. คำนวณรายได้สะสมจริง (80% และหัก ณ ที่จ่าย 3%) ---
+  const realGrossEarnings = completedJobsList.reduce((sum: number, j: any) => {
+    const duration = Number(j.durationHours || 2);
+    const rawPrice = Number(
+      j.totalCredits || 
+      j.totalPrice || 
+      j.totalAmount || 
+      (j.pricePerHour ? j.pricePerHour * duration : 0) || 
+      j.price || 
+      0
+    );
+    return sum + Math.round(rawPrice * 0.80);
+  }, 0);
+
+  const realTaxDeduction = Number((realGrossEarnings * 0.03).toFixed(2));
+  const realNetPayout = Number((realGrossEarnings - realTaxDeduction).toFixed(2));
+
+  // --- 3. ฟังก์ชันสำหรับกดลบประวัติการรับงาน (Soft Delete) ---
+  const handleDeleteJobHistory = async (jobId: string) => {
+    if (!window.confirm('คุณต้องการลบรายการประวัตินี้ออกจากหน้าจอใช่หรือไม่?')) return;
+    try {
+      await setDoc(doc(db, 'bookings', jobId), { isDeletedByPartner: true }, { merge: true });
+      setJobs((prev: any[]) => prev.filter((j: any) => j.id !== jobId));
+    } catch (err) {
+      console.error('Delete history error:', err);
+      alert('ไม่สามารถลบรายการได้ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
+
 // พาร์ทเนอร์กดยืนยันรับงาน
   const handleAcceptJob = async (bookingId: string) => {
     if (!bookingId) return;
@@ -669,10 +709,9 @@ const handleStartProgress = async (bookingId: string) => {
             ))}
 
             <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-white">ตารางงานที่ได้รับการยืนยัน:</span>
             <span className="text-emerald-400 font-semibold text-[11px]">
-              {jobs.filter((j: any) => ['accepted', 'in_progress', 'confirmed'].includes(j.status)).length} งานวันนี้
-            </span>
+             {activeJobs.length} งานวันนี้
+           </span>
           </div>
 
           {/* Confirmed / Pending / In-progress Jobs */}
@@ -830,33 +869,34 @@ const handleStartProgress = async (bookingId: string) => {
         {partnerTab === 'earnings' && (
           <div className="space-y-4">
             <div className="p-5 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 rounded-2xl border border-amber-500/40 text-center space-y-1">
-              <span className="text-xs text-slate-400">รายได้สะสมสุทธิพร้อมโอน (Net Payout)</span>
-              <div className="text-3xl font-black text-amber-300 font-['Plus_Jakarta_Sans']">
-                {netEarnings.toLocaleString()} ฿
-              </div>
-              <p className="text-[10px] text-slate-400">
-                รอบโอนเงินอัตโนมัติเข้าบัญชีกสิกรไทย (KBANK) ทุกวันศุกร์
-              </p>
+            <span className="text-xs text-slate-400 font-medium">รายได้สะสมสุทธิพร้อมโอน (Net Payout)</span>
+            <div className="text-3xl font-black text-amber-300 font-['Plus_Jakarta_Sans']">
+              {realNetPayout > 0 ? realNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'} ฿
             </div>
+            <p className="text-[10px] text-slate-400">
+              รอบโอนเงินอัตโนมัติเข้าบัญชีกสิกรไทย (KBANK) ทุกวันศุกร์
+            </p>
+          </div>
 
-            {/* Tax Breakdown Card */}
-            <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between font-bold text-white border-b border-slate-800 pb-2">
-                <span>สรุปการคำนวณรายได้และภาษี:</span>
-                <span className="text-[10px] text-emerald-400">ถูกต้องตามประมวลรัษฎากร</span>
-              </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>ยอดรวมค่าบริการ (Gross 80%):</span>
-                <span className="text-slate-200">{grossEarnings.toLocaleString()} บาท</span>
-              </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>ภาษีหัก ณ ที่จ่าย 3% (ม.3 เตรส):</span>
-                <span className="text-rose-400 font-semibold">-{totalWithholdingTax.toLocaleString()} บาท</span>
-              </div>
-              <div className="flex justify-between text-slate-200 font-bold text-xs pt-1.5 border-t border-slate-800">
-                <span>ยอดเงินจ่ายสุทธิ (Net Payout):</span>
-                <span className="text-amber-300">{netEarnings.toLocaleString()} บาท</span>
-              </div>
+          {/* Tax Breakdown Card */}
+          <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
+            <div className="flex items-center justify-between font-bold text-white border-b border-slate-800 pb-2">
+              <span>สรุปการคำนวณรายได้และภาษี:</span>
+              <span className="text-[10px] text-emerald-400">ถูกต้องตามประมวลรัษฎากร</span>
+            </div>
+            <div className="flex justify-between text-slate-400 text-[11px]">
+              <span>ยอดรวมค่าบริการ (Gross 80%):</span>
+              <span className="text-slate-200 font-medium">{realGrossEarnings.toLocaleString()} บาท</span>
+            </div>
+            <div className="flex justify-between text-slate-400 text-[11px]">
+              <span>ภาษีหัก ณ ที่จ่าย 3% (ภ.ง.ด 1เดรด):</span>
+              <span className="text-rose-400 font-semibold">-{realTaxDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+            </div>
+            <div className="flex justify-between text-slate-200 font-bold text-xs pt-1.5 border-t border-slate-800">
+              <span>ยอดเงินจ่ายสุทธิ (Net Payout):</span>
+              <span className="text-amber-300 font-bold">{realNetPayout > 0 ? realNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'} บาท</span>
+            </div>
+          </div>
 
               {/* ปุ่มดูและปุ่มดาวน์โหลดเอกสาร */}
           <div className="grid grid-cols-2 gap-2 mt-2">
