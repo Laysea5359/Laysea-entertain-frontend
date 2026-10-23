@@ -229,6 +229,34 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return () => unsubscribe();
   }, [userSession?.phone, userSession?.id]);
 
+// ระบบส่งเสียง + สั่นเตือนพาร์ทเนอร์ล่วงหน้า 1 ชม. ก่อนเวลานัด
+  useEffect(() => {
+    const upcomingJob = activeJobs.find((j: any) => {
+      if (j.status !== 'accepted' && j.status !== 'confirmed') return false;
+      const targetDateStr = j.date || '2026-10-23';
+      const rawTime = (j.startTime || '19:00').replace('.', ':').trim();
+      const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+      const targetTime = new Date(`${targetDateStr}T${targetTimeStr}`).getTime();
+      const diffMins = Math.round((targetTime - Date.now()) / (1000 * 60));
+      return diffMins > 0 && diffMins <= 60;
+    });
+
+    if (upcomingJob) {
+      const alertKey = `alerted_1h_${upcomingJob.id}`;
+      if (!sessionStorage.getItem(alertKey)) {
+        if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([200, 100, 200]);
+        }
+        try {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.volume = 0.8;
+          audio.play().catch(() => {});
+        } catch (e) {}
+        sessionStorage.setItem(alertKey, 'true');
+      }
+    }
+  }, [activeJobs]);
+
 // เก็บรูปภาพอัลบั้ม 1-6 รูป
   const [galleryImages, setGalleryImages] = useState<string[]>(() => {
     const saved = localStorage.getItem(`gallery_${userSession?.phone}`);
@@ -736,11 +764,46 @@ const handleStartProgress = async (bookingId: string) => {
               </div>
             ))}
 
-            <div className="flex items-center justify-between text-xs">
-            <span className="text-emerald-400 font-semibold text-[11px]">
-             {activeJobs.length} งานวันนี้
-           </span>
-          </div>
+            <div className="flex items-center justify-between px-1 mb-2">
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>📅</span> ตารางงานที่ได้รับการยืนยัน
+       </span>
+              <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              {activeJobs.length} งานวันนี้
+       </span>
+    </div>
+
+         {/* แจ้งเตือนพาร์ทเนอร์ล่วงหน้า 1 ชั่วโมงก่อนถึงเวลานัดหมาย */}
+          {activeJobs.map((job: any) => {
+            if (job.status !== 'accepted' && job.status !== 'confirmed') return null;
+
+            // ตรวจสอบวันและเวลานัดหมาย
+            const targetDateStr = job.date || '2026-10-23';
+            const rawTime = (job.startTime || '19:00').replace('.', ':').trim();
+            const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+            
+            const targetDateTime = new Date(`${targetDateStr}T${targetTimeStr}`);
+            const now = new Date();
+            const diffMinutes = Math.round((targetDateTime.getTime() - now.getTime()) / (1000 * 60));
+
+            // แสดงกล่องเตือนเมื่อเหลือเวลาเตรียมตัว 0 - 60 นาทีก่อนเวลานัด
+            if (diffMinutes > 0 && diffMinutes <= 60) {
+              return (
+                <div key={`alert-prep-${job.id}`} className="p-3 bg-amber-500/20 border border-amber-500/50 rounded-xl mb-3 flex items-start gap-2.5 animate-pulse text-xs">
+                  <span className="text-base">⏰</span>
+                  <div className="space-y-0.5 text-slate-200">
+                    <div className="font-bold text-amber-300">
+                      เตือนเตรียมตัว! อีก {diffMinutes} นาที จะถึงเวลานัดหมาย ({job.startTime || '19:00'} น.)
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      กรุณาเตรียมความพร้อมและออกเดินทางไปยัง <span className="text-white font-medium">{job.location || 'สถานที่นัดพบ'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })}
 
           {/* Confirmed / Pending / In-progress Jobs */}
           {jobs.filter((j: any) => ['accepted', 'in_progress', 'confirmed'].includes(j.status)).length === 0 ? (
