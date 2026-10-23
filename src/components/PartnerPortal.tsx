@@ -879,6 +879,57 @@ const handleStartProgress = async (bookingId: string) => {
           </div>
         </div>
 
+  {/* รายการประวัติงานที่เสร็จสิ้น (ดึงจาก jobs จริง) */}
+          <div className="space-y-2 mt-2">
+            <div className="flex justify-between items-center px-1">
+              <span className="text-xs font-bold text-slate-300">ประวัติงานที่เสร็จสิ้น & รับเงินแล้ว</span>
+              <span className="text-[10px] text-slate-500">
+                {jobs.filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased).length} รายการ
+              </span>
+            </div>
+
+            {jobs.filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased).length > 0 ? (
+              jobs
+                .filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased)
+                .map((job: any, idx: number) => {
+                  const jobTotal = Number(job.totalPrice || job.totalAmount || job.price || 0);
+                  const netEarn = Math.round(jobTotal * 0.8 * 0.97); // หักคอมมิชชั่น 20% และหัก ณ ที่จ่าย 3%
+
+                  return (
+                    <div key={job.id || idx} className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+                      <div className="space-y-0.5">
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <span>{job.eventType || job.serviceType || 'งานบริการ Laysea'}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">
+                            โอนสำเร็จ
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {job.date || (job.createdAt ? new Date(job.createdAt).toLocaleDateString('th-TH') : 'ล่าสุด')} • {job.durationHours || 2} ชม.
+                        </div>
+                        <div className="text-[9px] text-slate-500">
+                          (หักคอมมิชชั่น 20% & ภาษี 3% แล้ว)
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="font-bold text-amber-300 text-sm">
+                          +{netEarn > 0 ? netEarn.toLocaleString() : (jobTotal * 0.776).toLocaleString()} ฿
+                        </div>
+                        <div className="text-[10px] text-slate-500 line-through">
+                          {jobTotal.toLocaleString()} ฿
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+            ) : (
+              <div className="py-6 text-center text-slate-500 text-xs bg-slate-900/40 rounded-xl border border-slate-800/60">
+                ยังไม่มีรายการงานที่เสร็จสิ้น
+              </div>
+            )}
+          </div>
+
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
             <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
             <p>
