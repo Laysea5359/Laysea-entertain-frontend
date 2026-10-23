@@ -868,75 +868,76 @@ const handleStartProgress = async (bookingId: string) => {
         {/* TAB 3: EARNINGS & WITHHOLDING TAX (50 ทวิ) */}
         {partnerTab === 'earnings' && (
           <div className="space-y-4">
+            {/* กล่องรายได้สุทธิ */}
             <div className="p-5 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 rounded-2xl border border-amber-500/40 text-center space-y-1">
-            <span className="text-xs text-slate-400 font-medium">รายได้สะสมสุทธิพร้อมโอน (Net Payout)</span>
-            <div className="text-3xl font-black text-amber-300 font-['Plus_Jakarta_Sans']">
-              {realNetPayout > 0 ? realNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'} ฿
+              <span className="text-xs text-slate-400 font-medium">รายได้สะสมสุทธิพร้อมโอน (Net Payout)</span>
+              <div className="text-3xl font-black text-amber-300 font-['Plus_Jakarta_Sans']">
+                {realNetPayout > 0 ? realNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'} ฿
+              </div>
+              <p className="text-[10px] text-slate-400">
+                รอบโอนเงินอัตโนมัติเข้าบัญชีกสิกรไทย (KBANK) ทุกวันศุกร์
+              </p>
             </div>
-            <p className="text-[10px] text-slate-400">
-              รอบโอนเงินอัตโนมัติเข้าบัญชีกสิกรไทย (KBANK) ทุกวันศุกร์
-            </p>
-          </div>
 
-          {/* Tax Breakdown Card */}
-          <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
-            <div className="flex items-center justify-between font-bold text-white border-b border-slate-800 pb-2">
-              <span>สรุปการคำนวณรายได้และภาษี:</span>
-              <span className="text-[10px] text-emerald-400">ถูกต้องตามประมวลรัษฎากร</span>
-            </div>
-            <div className="flex justify-between text-slate-400 text-[11px]">
-              <span>ยอดรวมค่าบริการ (Gross 80%):</span>
-              <span className="text-slate-200 font-medium">{realGrossEarnings.toLocaleString()} บาท</span>
-            </div>
-            <div className="flex justify-between text-slate-400 text-[11px]">
-              <span>ภาษีหัก ณ ที่จ่าย 3% (ภ.ง.ด 1เดรด):</span>
-              <span className="text-rose-400 font-semibold">-{realTaxDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
-            </div>
-            <div className="flex justify-between text-slate-200 font-bold text-xs pt-1.5 border-t border-slate-800">
-              <span>ยอดเงินจ่ายสุทธิ (Net Payout):</span>
-              <span className="text-amber-300 font-bold">{realNetPayout > 0 ? realNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'} บาท</span>
-            </div>
-          </div>
+            {/* สรุปการคำนวณภาษี */}
+            <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between font-bold text-white border-b border-slate-800 pb-2">
+                <span>สรุปการคำนวณรายได้และภาษี:</span>
+                <span className="text-[10px] text-emerald-400">ถูกต้องตามประมวลรัษฎากร</span>
+              </div>
+              <div className="flex justify-between text-slate-400 text-[11px]">
+                <span>ยอดรวมค่าบริการ (Gross 80%):</span>
+                <span className="text-slate-200 font-medium">{realGrossEarnings.toLocaleString()} บาท</span>
+              </div>
+              <div className="flex justify-between text-slate-400 text-[11px]">
+                <span>ภาษีหัก ณ ที่จ่าย 3% (ภ.ง.ด 1เดรด):</span>
+                <span className="text-rose-400 font-semibold">-{realTaxDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+              </div>
+              <div className="flex justify-between text-slate-200 font-bold text-xs pt-1.5 border-t border-slate-800">
+                <span>ยอดเงินจ่ายสุทธิ (Net Payout):</span>
+                <span className="text-amber-300 font-bold">{realNetPayout > 0 ? realNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'} บาท</span>
+              </div>
 
               {/* ปุ่มดูและปุ่มดาวน์โหลดเอกสาร */}
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => setShowWithholdingCertModal(true)}
-              className="py-2 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-400" />
-              <span>ดูตัวอย่างใบ 50 ทวิ</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadTaxDoc}
-              className="py-2 px-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-            >
-              <span>📥 ดาวน์โหลดเอกสาร</span>
-            </button>
-          </div>
-        </div>
-
-  {/* รายการประวัติงานที่เสร็จสิ้น (ดึงจาก jobs จริง) */}
-          <div className="space-y-2 mt-2">
-            <div className="flex justify-between items-center px-1">
-              <span className="text-xs font-bold text-slate-300">ประวัติงานที่เสร็จสิ้น & รับเงินแล้ว</span>
-              <span className="text-[10px] text-slate-500">
-                {jobs.filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased).length} รายการ
-              </span>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowWithholdingCertModal(true)}
+                  className="py-2 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <span>ดูตัวอย่างใบ 50 ทวิ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadTaxDoc}
+                  className="py-2 px-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <span>ดาวน์โหลดเอกสาร</span>
+                </button>
+              </div>
             </div>
 
-            {jobs.filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased).length > 0 ? (
-              jobs
-                .filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased)
-                .map((job: any, idx: number) => {
-                   const duration = Number(job.durationHours || 2);
-                   const jobTotal = Number(job.totalCredits || job.totalPrice || job.totalAmount || (job.pricePerHour ? job.pricePerHour * duration : 0) || job.price || 0);
-                   const grossPart = Math.round(jobTotal * 0.80);
-                   const netEarn = Math.round(grossPart * 0.97);                  
+            {/* รายการประวัติงานที่เสร็จสิ้น (ดึงจาก jobs จริง) */}
+            <div className="space-y-2 mt-2">
+              <div className="flex justify-between items-center px-1">
+                <span className="text-xs font-bold text-slate-300">ประวัติงานที่เสร็จสิ้น & รับเงินแล้ว</span>
+                <span className="text-[10px] text-slate-500">{completedJobsList.length} รายการ</span>
+              </div>
 
+              {completedJobsList.length > 0 ? (
+                completedJobsList.map((job: any, idx: number) => {
+                  const duration = Number(job.durationHours || 2);
+                  const rawPrice = Number(
+                    job.totalCredits || 
+                    job.totalPrice || 
+                    job.totalAmount || 
+                    (job.pricePerHour ? job.pricePerHour * duration : 0) || 
+                    job.price || 
+                    0
+                  );
+                  const grossPart = Math.round(rawPrice * 0.80);
+                  const netEarn = Math.round(grossPart * 0.97);
 
                   return (
                     <div key={job.id || idx} className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
@@ -948,39 +949,54 @@ const handleStartProgress = async (bookingId: string) => {
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-400">
-                          {job.date || (job.createdAt ? new Date(job.createdAt).toLocaleDateString('th-TH') : 'ล่าสุด')} • {job.durationHours || 2} ชม.
+                          {job.date || (job.createdAt ? new Date(job.createdAt).toLocaleDateString('th-TH') : 'ล่าสุด')} • {duration} ชม.
                         </div>
                         <div className="text-[9px] text-slate-500">
                           (หักคอมมิชชั่น 20% & ภาษี 3% แล้ว)
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <div className="font-bold text-amber-300 text-sm">
-                          +{netEarn > 0 ? netEarn.toLocaleString() : (jobTotal * 0.776).toLocaleString()} ฿
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="font-bold text-amber-300 text-sm">
+                            +{netEarn.toLocaleString()} ฿
+                          </div>
+                          {rawPrice > 0 && (
+                            <div className="text-[10px] text-slate-500 line-through">
+                              {rawPrice.toLocaleString()} ฿
+                            </div>
+                          )}
                         </div>
-                        <div className="text-[10px] text-slate-500 line-through">
-                          {jobTotal.toLocaleString()} ฿
-                        </div>
+
+                        {/* ปุ่มลบประวัติงาน */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteJobHistory(job.id)}
+                          title="ลบประวัติรายการนี้"
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                        >
+                          ✕
+                        </button>
                       </div>
                     </div>
                   );
                 })
-            ) : (
-              <div className="py-6 text-center text-slate-500 text-xs bg-slate-900/40 rounded-xl border border-slate-800/60">
-                ยังไม่มีรายการงานที่เสร็จสิ้น
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="py-6 text-center text-slate-500 text-xs bg-slate-900/40 rounded-xl border border-slate-800/60">
+                  ยังไม่มีรายการงานที่เสร็จสิ้น
+                </div>
+              )}
+            </div>
 
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
-            <p>
-              แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
-            </p>
+            {/* กล่องหมายเหตุภาษี */}
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+              <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
+              <p>
+                แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
         {/* TAB 4: PROFILE & SETTINGS */}
         {partnerTab === 'profile' && (
