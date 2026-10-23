@@ -1586,9 +1586,45 @@ const handleStartProgress = async (bookingId: string) => {
         <SosEmergencyModal
           onClose={() => setIsSosOpen(false)}
           incidents={[]}
-          onTriggerSos={(threat: string) => {
+          onTriggerSos={async (threat: string) => {
             onTriggerSos(threat);
             setIsSosOpen(false);
+
+            // ดึงพิกัดจริงเพื่อส่งเข้าหลังบ้าน Admin ให้เห็นพิกัดทันที
+            const sendAlertWithCoords = async (latitude: number | null, longitude: number | null) => {
+              try {
+                const partnerId = userSession?.phone || userSession?.id || 'unknown';
+                const partnerName = userSession?.name || userSession?.nickname || 'Lay';
+                const partnerPhone = userSession?.phone || '-';
+
+                // อัปเดตข้อมูลตรงเข้า Firestore sos_alerts หรือ incidents
+                const alertData = {
+                  partnerId,
+                  partnerName,
+                  partnerPhone,
+                  reason: threat,
+                  status: 'active',
+                  lat: latitude,
+                  lng: longitude,
+                  createdAt: new Date().toISOString(),
+                  timestamp: new Date().toISOString()
+                };
+
+                await setDoc(doc(db, 'sos_alerts', `sos_${Date.now()}`), alertData);
+              } catch (err) {
+                console.error('Failed to dispatch SOS alert coordinates:', err);
+              }
+            };
+
+            if (typeof window !== 'undefined' && navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => sendAlertWithCoords(pos.coords.latitude, pos.coords.longitude),
+                () => sendAlertWithCoords(userSession?.lat || null, userSession?.lng || null),
+                { enableHighAccuracy: true, timeout: 5000 }
+              );
+            } else {
+              sendAlertWithCoords(userSession?.lat || null, userSession?.lng || null);
+            }
           }}
         />
       )}
