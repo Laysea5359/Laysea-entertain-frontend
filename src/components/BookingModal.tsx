@@ -300,7 +300,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
               />
             </div>
-            <div>
+          <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 เวลาเริ่มนัดหมาย:
               </label>
@@ -316,6 +316,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
               />
+            </div>
+          <div>
 
           {/* Duration with Progressive Discounts */}
           <div>
