@@ -229,34 +229,6 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return () => unsubscribe();
   }, [userSession?.phone, userSession?.id]);
 
-// ระบบส่งเสียง + สั่นเตือนพาร์ทเนอร์ล่วงหน้า 1 ชม. ก่อนเวลานัด
-  useEffect(() => {
-    const upcomingJob = activeJobs?.find((j: any) => {
-      if (j.status !== 'accepted' && j.status !== 'confirmed') return false;
-      const targetDateStr = j.date || new Date().toLocaleDateString('en-CA');
-      const rawTime = (j.startTime || '19:00').replace('.', ':').trim();
-      const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
-      const targetTime = new Date(`${targetDateStr}T${targetTimeStr}`).getTime();
-      const diffMins = Math.round((targetTime - Date.now()) / (1000 * 60));
-      return diffMins > 0 && diffMins <= 60;
-    });
-
-    if (upcomingJob) {
-      const alertKey = `alerted_1h_${upcomingJob.id}`;
-      if (!sessionStorage.getItem(alertKey)) {
-        if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-          navigator.vibrate([200, 100, 200]);
-        }
-        try {
-          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-          audio.volume = 0.8;
-          audio.play().catch(() => {});
-        } catch (e) {}
-        sessionStorage.setItem(alertKey, 'true');
-      }
-    }
-  }, [activeJobs]);
-
 // เก็บรูปภาพอัลบั้ม 1-6 รูป
   const [galleryImages, setGalleryImages] = useState<string[]>(() => {
     const saved = localStorage.getItem(`gallery_${userSession?.phone}`);
@@ -383,6 +355,34 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     !j?.isDeletedByPartner && 
     ['pending', 'requested', 'accepted', 'confirmed', 'in_progress'].includes(j?.status)
   );
+
+// ระบบส่งเสียง + สั่นเตือนพาร์ทเนอร์ล่วงหน้า 1 ชม. ก่อนเวลานัด
+  useEffect(() => {
+    const upcomingJob = activeJobs?.find((j: any) => {
+      if (j.status !== 'accepted' && j.status !== 'confirmed') return false;
+      const targetDateStr = j.date || new Date().toLocaleDateString('en-CA');
+      const rawTime = (j.startTime || '19:00').replace('.', ':').trim();
+      const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+      const targetTime = new Date(`${targetDateStr}T${targetTimeStr}`).getTime();
+      const diffMins = Math.round((targetTime - Date.now()) / (1000 * 60));
+      return diffMins > 0 && diffMins <= 60;
+    });
+
+    if (upcomingJob) {
+      const alertKey = `alerted_1h_${upcomingJob.id}`;
+      if (!sessionStorage.getItem(alertKey)) {
+        if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([200, 100, 200]);
+        }
+        try {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.volume = 0.8;
+          audio.play().catch(() => {});
+        } catch (e) {}
+        sessionStorage.setItem(alertKey, 'true');
+      }
+    }
+  }, [activeJobs]);
 
   const completedJobsList = (jobs || []).filter((j: any) => 
     !j?.isDeletedByPartner && 
