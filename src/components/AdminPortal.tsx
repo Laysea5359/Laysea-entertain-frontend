@@ -517,8 +517,11 @@ const pendingKycCount = (kycList || []).filter((k) => k.status === 'pending_revi
 
               <button
             onClick={() => {
-              // หางานที่กำลังดำเนินการอยู่จริงในระบบ (active / accepted)
-              const activeJob = bookings?.find((b: any) => b.status === 'accepted' || b.status === 'in_progress');
+              // ตรวจสอบตัวแปรงานอย่างปลอดภัย ไม่ให้เกิด bookings is not defined
+              const currentJobs = (typeof bookings !== 'undefined' ? bookings : []) || 
+                                  (typeof allBookings !== 'undefined' ? allBookings : []);
+              const activeJob = currentJobs.find((b: any) => b.status === 'accepted' || b.status === 'in_progress');
+              
               if (activeJob) {
                 setMonitoringJob(activeJob);
               } else {
@@ -574,13 +577,14 @@ const pendingKycCount = (kycList || []).filter((k) => k.status === 'pending_revi
               let lng = inc.lng || inc.longitude;
 
               // 2. ถ้าในฟิลด์ไม่มี ให้แกะพิกัดสดจากข้อความแจ้งเตือน [GPS: xx, yy]
-              if ((!lat || !lng) && inc.message && inc.message.includes('[GPS:')) {
-                const match = inc.message.match(/\[GPS:\s*([\d.]+),\s*([\d.]+)\]/);
-                if (match) {
-                  lat = match[1];
-                  lng = match[2];
-                }
-              }
+    const textToCheck = `${inc.reason || ''} ${inc.message || ''} ${inc.description || ''}`;
+    if ((!lat || !lng) && textToCheck.includes('[GPS:')) {
+      const match = textToCheck.match(/\[GPS:\s*([0-9.-]+),\s*([0-9.-]+)\]/);
+      if (match) {
+        lat = match[1];
+        lng = match[2];
+      }
+    }
 
               return lat && lng ? (
                 <a
