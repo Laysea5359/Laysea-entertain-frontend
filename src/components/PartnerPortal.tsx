@@ -975,93 +975,135 @@ const handleStartProgress = async (bookingId: string) => {
                 </div>
               </div>
 
-      {/* กล่องตั้งค่าประเภทงานและเรตราคา (Real-time Sync) */}
-          <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-3">
+      {/* กล่องตั้งค่าประเภทงานและเรตราคาแยกตามบริการ (ขั้นต่ำ 450฿/ชม.) */}
+          <div className="p-4 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-3.5">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>💼</span> บริการที่เปิดรับ & อัตราค่าบริการ
+                <span>💼</span> รูปแบบงานที่รับ & เรตราคาแยกตามบริการ
               </span>
-              <span className="text-[10px] text-amber-400">เริ่มต้นต่ำกว่า 600฿/ชม.</span>
+              <span className="text-[10px] text-amber-400 font-medium">ขั้นต่ำ 450฿/ชม.</span>
             </div>
 
-            {/* เลือกเรตราคาเริ่มต้นต่อชั่วโมง */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-[11px]">
-                <label className="text-slate-300 font-medium">เรตค่าบริการต่อชั่วโมง</label>
-                <span className="text-rose-400 font-bold">{userSession?.hourlyRate || 400} ฿/ชม.</span>
-              </div>
-              <select
-                value={userSession?.hourlyRate || 400}
-                onChange={async (e) => {
-                  const newRate = Number(e.target.value);
+            <div className="space-y-2.5">
+              {[
+                {
+                  id: 'cafe',
+                  label: '☕ ทานข้าว / คาเฟ่ / เดินห้าง',
+                  defaultRate: 450,
+                  options: [450, 500, 550, 600]
+                },
+                {
+                  id: 'movie',
+                  label: '🎬 ดูหนัง / กิจกรรมไลฟ์สไตล์',
+                  defaultRate: 500,
+                  options: [500, 550, 600, 700]
+                },
+                {
+                  id: 'party',
+                  label: '🍻 ปาร์ตี้ / สังสรรค์ / ชงดื่ม',
+                  defaultRate: 700,
+                  options: [700, 800, 900, 1000]
+                },
+                {
+                  id: 'event',
+                  label: '👗 ออกงานสังคม / งานแต่ง / ทางการ',
+                  defaultRate: 900,
+                  options: [900, 1000, 1200, 1500]
+                }
+              ].map((service) => {
+                const partnerRates = userSession?.serviceRates || {};
+                const isSelected = partnerRates[service.id]?.enabled ?? (service.id === 'cafe');
+                const currentRate = partnerRates[service.id]?.rate || service.defaultRate;
+
+                const updateRateData = async (newEnabled: boolean, newRate: number) => {
+                  const updatedRates = {
+                    ...partnerRates,
+                    [service.id]: {
+                      enabled: newEnabled,
+                      rate: newRate,
+                      name: service.label
+                    }
+                  };
+
+                  // อัปเดตราคาต่ำสุดที่รับ เพื่อนำไปแสดงผลเริ่มต้นในการ์ดหน้าแรก
+                  const activeRates = Object.values(updatedRates)
+                    .filter((s: any) => s.enabled)
+                    .map((s: any) => s.rate);
+                  const minRate = activeRates.length > 0 ? Math.min(...activeRates) : 450;
+
                   const pId = userSession?.phone || userSession?.id;
                   if (pId) {
                     try {
-                      await setDoc(doc(db, 'users', pId), { hourlyRate: newRate }, { merge: true });
-                      await setDoc(doc(db, 'partners', pId), { hourlyRate: newRate }, { merge: true });
-                      localStorage.setItem(`partner_rate_${pId}`, String(newRate));
+                      await setDoc(doc(db, 'users', pId), { 
+                        serviceRates: updatedRates, 
+                        hourlyRate: minRate,
+                        updatedAt: new Date().toISOString()
+                      }, { merge: true });
+
+                      await setDoc(doc(db, 'partners', pId), { 
+                        serviceRates: updatedRates, 
+                        hourlyRate: minRate,
+                        updatedAt: new Date().toISOString()
+                      }, { merge: true });
+
                       if (typeof setUserSession === 'function') {
-                        setUserSession((prev: any) => ({ ...prev, hourlyRate: newRate }));
+                        setUserSession((prev: any) => ({
+                          ...prev,
+                          serviceRates: updatedRates,
+                          hourlyRate: minRate
+                        }));
                       }
-                      alert(`อัปเดตเรตราคาเป็น ${newRate} บาท/ชม. เรียบร้อย`);
                     } catch (err) {
-                      console.error('Update rate error:', err);
+                      console.error('Update rates failed:', err);
                     }
                   }
-                }}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
-              >
-                <option value={350}>350 บาท / ชม. (สายชิล / ทานข้าว / ถ่ายรูป)</option>
-                <option value={400}>400 บาท / ชม. (คาเฟ่ / ดูหนัง / ช้อปปิ้ง)</option>
-                <option value={500}>500 บาท / ชม. (ดูแลทั่วไป / สังสรรค์เบาๆ)</option>
-                <option value={600}>600 บาท / ชม. (ปาร์ตี้ / ดูแลชงเครื่องดื่ม)</option>
-                <option value={800}>800 บาท / ชม. (ออกงานสังคม / ปาร์ตี้)</option>
-                <option value={1000}>1,000 บาท / ชม. (งาน VIP / เอสคอร์ท)</option>
-              </select>
+                };
+
+                return (
+                  <div 
+                    key={service.id} 
+                    className={`p-2.5 rounded-xl border transition-all ${
+                      isSelected 
+                        ? 'bg-slate-950/80 border-rose-500/50 shadow-sm' 
+                        : 'bg-slate-950/30 border-slate-800 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer flex-1">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => updateRateData(e.target.checked, currentRate)}
+                          className="rounded border-slate-700 text-rose-500 focus:ring-0 w-4 h-4"
+                        />
+                        <span className={`text-xs font-medium ${isSelected ? 'text-white' : 'text-slate-400'}`}>
+                          {service.label}
+                        </span>
+                      </label>
+
+                      {isSelected && (
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={currentRate}
+                            onChange={(e) => updateRateData(true, Number(e.target.value))}
+                            className="bg-slate-900 border border-slate-700 text-amber-300 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-rose-500"
+                          >
+                            {service.options.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt} ฿/ชม.
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* เลือกรูปแบบงานที่รับ */}
-            <div className="space-y-1.5 pt-1">
-              <label className="text-[11px] text-slate-300 font-medium">รูปแบบงานที่ยินดีรับบริการ</label>
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                {[
-                  { id: 'cafe', label: '☕ คาเฟ่ / ทานข้าว' },
-                  { id: 'movie', label: '🎬 ดูหนัง / ช้อปปิ้ง' },
-                  { id: 'party', label: '🍻 ปาร์ตี้ / สังสรรค์' },
-                  { id: 'event', label: '👗 ออกงานสังคม / งานแต่ง' },
-                ].map((item) => {
-                  const currentSkills = userSession?.skills || ['☕ คาเฟ่ / ทานข้าว', '🎬 ดูหนัง / ช้อปปิ้ง'];
-                  const isChecked = currentSkills.includes(item.label);
-                  return (
-                    <label key={item.id} className="flex items-center gap-2 p-2 bg-slate-950/70 rounded-lg border border-slate-800 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={async (e) => {
-                          const updatedSkills = e.target.checked
-                            ? [...currentSkills, item.label]
-                            : currentSkills.filter((s: string) => s !== item.label);
-
-                          const pId = userSession?.phone || userSession?.id;
-                          if (pId) {
-                            try {
-                              await setDoc(doc(db, 'users', pId), { skills: updatedSkills }, { merge: true });
-                              await setDoc(doc(db, 'partners', pId), { skills: updatedSkills }, { merge: true });
-                              if (typeof setUserSession === 'function') {
-                                setUserSession((prev: any) => ({ ...prev, skills: updatedSkills }));
-                              }
-                            } catch (err) {
-                              console.error('Update skills error:', err);
-                            }
-                          }
-                        }}
-                        className="rounded border-slate-700 text-rose-500 focus:ring-0"
-                      />
-                      <span className="text-slate-300">{item.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
+            <div className="text-[10px] text-slate-500 text-center pt-1 border-t border-slate-800/80">
+              * การคำนวณราคาการจองจะคิดตามเรตของงานที่ลูกค้าเลือกคูณจำนวนชั่วโมงจริง (ขั้นต่ำ 2 ชม.)
             </div>
           </div>
 
