@@ -975,6 +975,96 @@ const handleStartProgress = async (bookingId: string) => {
                 </div>
               </div>
 
+      {/* กล่องตั้งค่าประเภทงานและเรตราคา (Real-time Sync) */}
+          <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>💼</span> บริการที่เปิดรับ & อัตราค่าบริการ
+              </span>
+              <span className="text-[10px] text-amber-400">เริ่มต้นต่ำกว่า 600฿/ชม.</span>
+            </div>
+
+            {/* เลือกเรตราคาเริ่มต้นต่อชั่วโมง */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <label className="text-slate-300 font-medium">เรตค่าบริการต่อชั่วโมง</label>
+                <span className="text-rose-400 font-bold">{userSession?.hourlyRate || 400} ฿/ชม.</span>
+              </div>
+              <select
+                value={userSession?.hourlyRate || 400}
+                onChange={async (e) => {
+                  const newRate = Number(e.target.value);
+                  const pId = userSession?.phone || userSession?.id;
+                  if (pId) {
+                    try {
+                      await setDoc(doc(db, 'users', pId), { hourlyRate: newRate }, { merge: true });
+                      await setDoc(doc(db, 'partners', pId), { hourlyRate: newRate }, { merge: true });
+                      localStorage.setItem(`partner_rate_${pId}`, String(newRate));
+                      if (typeof setUserSession === 'function') {
+                        setUserSession((prev: any) => ({ ...prev, hourlyRate: newRate }));
+                      }
+                      alert(`อัปเดตเรตราคาเป็น ${newRate} บาท/ชม. เรียบร้อย`);
+                    } catch (err) {
+                      console.error('Update rate error:', err);
+                    }
+                  }
+                }}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              >
+                <option value={350}>350 บาท / ชม. (สายชิล / ทานข้าว / ถ่ายรูป)</option>
+                <option value={400}>400 บาท / ชม. (คาเฟ่ / ดูหนัง / ช้อปปิ้ง)</option>
+                <option value={500}>500 บาท / ชม. (ดูแลทั่วไป / สังสรรค์เบาๆ)</option>
+                <option value={600}>600 บาท / ชม. (ปาร์ตี้ / ดูแลชงเครื่องดื่ม)</option>
+                <option value={800}>800 บาท / ชม. (ออกงานสังคม / ปาร์ตี้)</option>
+                <option value={1000}>1,000 บาท / ชม. (งาน VIP / เอสคอร์ท)</option>
+              </select>
+            </div>
+
+            {/* เลือกรูปแบบงานที่รับ */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[11px] text-slate-300 font-medium">รูปแบบงานที่ยินดีรับบริการ</label>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                {[
+                  { id: 'cafe', label: '☕ คาเฟ่ / ทานข้าว' },
+                  { id: 'movie', label: '🎬 ดูหนัง / ช้อปปิ้ง' },
+                  { id: 'party', label: '🍻 ปาร์ตี้ / สังสรรค์' },
+                  { id: 'event', label: '👗 ออกงานสังคม / งานแต่ง' },
+                ].map((item) => {
+                  const currentSkills = userSession?.skills || ['☕ คาเฟ่ / ทานข้าว', '🎬 ดูหนัง / ช้อปปิ้ง'];
+                  const isChecked = currentSkills.includes(item.label);
+                  return (
+                    <label key={item.id} className="flex items-center gap-2 p-2 bg-slate-950/70 rounded-lg border border-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={async (e) => {
+                          const updatedSkills = e.target.checked
+                            ? [...currentSkills, item.label]
+                            : currentSkills.filter((s: string) => s !== item.label);
+
+                          const pId = userSession?.phone || userSession?.id;
+                          if (pId) {
+                            try {
+                              await setDoc(doc(db, 'users', pId), { skills: updatedSkills }, { merge: true });
+                              await setDoc(doc(db, 'partners', pId), { skills: updatedSkills }, { merge: true });
+                              if (typeof setUserSession === 'function') {
+                                setUserSession((prev: any) => ({ ...prev, skills: updatedSkills }));
+                              }
+                            } catch (err) {
+                              console.error('Update skills error:', err);
+                            }
+                          }
+                        }}
+                        className="rounded border-slate-700 text-rose-500 focus:ring-0"
+                      />
+                      <span className="text-slate-300">{item.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
               <div className="pt-2 border-t border-slate-800 space-y-2">
                 <label className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-all">
             <Camera className="w-3.5 h-3.5 text-amber-400" />
