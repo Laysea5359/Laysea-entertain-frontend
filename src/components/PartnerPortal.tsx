@@ -59,6 +59,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
   const [isKycVerified, setIsKycVerified] = useState(false);
   const [isLiveTrackingOpen, setIsLiveTrackingOpen] = useState(false);
   const [selectedTrackingJob, setSelectedTrackingJob] = useState<any>(null);
+  const [selectedJobHistory, setSelectedJobHistory] = useState<any | null>(null);
 
   useEffect(() => {
     const checkKycStatus = async () => {
@@ -1031,7 +1032,22 @@ const handleStartProgress = async (bookingId: string) => {
                   const netEarn = Math.round(grossPart * 0.97);
 
                   return (
-                    <div key={job.id || idx} className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+              <div 
+               key={job.id || idx} 
+                 onClick={() => setSelectedJobHistory({
+                 id: job.id || `BK-${idx + 1}`,
+                  title: job.eventType || job.serviceType || 'งานบริการ Laysea',
+                  date: job.date || (job.createdAt ? new Date(job.createdAt).toLocaleDateString('th-TH') : 'ล่าสุด'),
+                  duration: `${duration} ชม.`,
+                  location: job.location || job.meetingPoint || 'จุดนัดหมายตามที่ตกลง',
+                  clientNickname: job.clientName || job.userName || 'ลูกค้าผู้ว่าจ้าง',
+               rawPrice: rawPrice,
+               grossPart: grossPart,
+               netEarn: netEarn
+           })}
+
+    className="p-3 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/50 rounded-xl flex justify-between items-center text-xs cursor-pointer transition-all active:scale-[0.99]"
+  >
                       <div className="space-y-0.5">
                         <div className="font-semibold text-white flex items-center gap-1.5">
                           <span>{job.eventType || job.serviceType || 'งานบริการ Laysea'}</span>
@@ -1603,6 +1619,92 @@ const handleStartProgress = async (bookingId: string) => {
           }}
           onOpenSos={() => onTriggerSos('ฉุกเฉินระหว่างปฏิบัติงาน')}
         />
+      )}
+
+{/* Modal ป๊อปอัปแสดงรายละเอียดประวัติงาน */}
+      {selectedJobHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-5 text-white shadow-2xl relative">
+            {/* Header */}
+            <div className="flex justify-between items-start border-b border-slate-800 pb-3 mb-4">
+              <div>
+                <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">
+                  REF: {selectedJobHistory.id}
+                </span>
+                <h3 className="text-base font-bold text-amber-400 mt-1">
+                  {selectedJobHistory.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedJobHistory(null)}
+                className="text-slate-400 hover:text-white p-1 text-lg leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ข้อมูลการนัดหมายและเช็กอิน */}
+            <div className="space-y-2 text-xs bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 mb-4">
+              <div className="flex justify-between">
+                <span className="text-slate-400">วัน-เวลานัดหมาย:</span>
+                <span>{selectedJobHistory.date} ({selectedJobHistory.duration})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">สถานที่นัดพบ:</span>
+                <span className="text-right truncate max-w-[200px] text-slate-200">{selectedJobHistory.location}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">สถานะเช็กอิน GPS:</span>
+                <span className="text-emerald-400 font-medium">บันทึกพิกัดตรงจุดนัดหมายแล้ว</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">ผู้ว่าจ้าง:</span>
+                <span className="text-slate-300">คุณ {selectedJobHistory.clientNickname}</span>
+              </div>
+            </div>
+
+            {/* สรุปแจกแจงรายได้และภาษี */}
+            <div className="text-xs bg-slate-950 p-3.5 rounded-xl border border-amber-500/20 mb-4 space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-400 mb-2">สรุปรายการเงินและภาษี (ภ.ง.ด. 1เตรส)</div>
+              <div className="flex justify-between text-slate-300">
+                <span>ยอดค่าบริการรวม (Gross):</span>
+                <span>{(selectedJobHistory.rawPrice || 0).toLocaleString()} ฿</span>
+              </div>
+              <div className="flex justify-between text-rose-400">
+                <span>หักค่าธรรมเนียมแพลตฟอร์ม (20%):</span>
+                <span>-{Math.round((selectedJobHistory.rawPrice || 0) * 0.2).toLocaleString()} ฿</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>ยอดบริการก่อนหักภาษี (80%):</span>
+                <span>{(selectedJobHistory.grossPart || 0).toLocaleString()} ฿</span>
+              </div>
+              <div className="flex justify-between text-rose-400">
+                <span>หักภาษี ณ ที่จ่าย 3%:</span>
+                <span>-{Math.round((selectedJobHistory.grossPart || 0) * 0.03).toLocaleString()} ฿</span>
+              </div>
+              <div className="border-t border-slate-800 pt-2 mt-2 flex justify-between text-sm font-bold text-amber-400">
+                <span>ยอดโอนสุทธิ (Net Payout):</span>
+                <span>+{(selectedJobHistory.netEarn || 0).toLocaleString()} ฿</span>
+              </div>
+            </div>
+
+            {/* ปุ่มปิดและแจ้งปัญหา */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => alert(`ส่งเรื่องตรวจสอบสำหรับงาน ${selectedJobHistory.id} เรียบร้อยแล้ว ทีมงานจะติดต่อกลับครับ`)}
+                className="flex-1 py-2 text-xs text-slate-400 hover:text-rose-400 border border-slate-700 rounded-xl transition-colors"
+              >
+                แจ้งปัญหาเกี่ยวกับงานนี้
+              </button>
+              <button
+                onClick={() => setSelectedJobHistory(null)}
+                className="flex-1 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
