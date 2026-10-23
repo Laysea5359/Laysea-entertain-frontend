@@ -983,35 +983,73 @@ const handleStartProgress = async (bookingId: string) => {
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
+              onChange={(e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-                try {
-                  const pKey = userSession?.phone || userSession?.id;
-                  if (!pKey) {
-                    alert('ไม่พบข้อมูลบัญชีพาร์ทเนอร์');
-                    return;
-                  }
+  const pKey = userSession?.phone || userSession?.id;
+  if (!pKey) {
+    alert('ไม่พบข้อมูลบัญชีพาร์ทเนอร์');
+    return;
+  }
 
-                  // 1. อัปโหลดรูปขึ้น Firebase Cloud Storage
-                  const downloadUrl = await uploadImageToCloud(file, `partners/${pKey}/avatar_${Date.now()}`);
+  const reader = new FileReader();
+  reader.onload = async (event) => {
+    const img = new Image();
+    img.onload = async () => {
+      // 1. บีบอัดรูปโปรไฟล์ให้กว้างไม่เกิน 400px (ไฟล์จะเล็กมาก ~30-50KB ไม่ชนลิมิต Firestore แน่นอน)
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 400;
+      let width = img.width;
+      let height = img.height;
 
-                  // 2. บันทึกและซิงค์ลง Cloud Firestore (คอลเลกชัน users) ทันที
-                  await setDoc(doc(db, 'users', pKey), {
-                    avatarUrl: downloadUrl,
-                    imageUrl: downloadUrl,
-                    avatar: downloadUrl,
-                    updatedAt: new Date().toISOString()
-                  }, { merge: true });
+      if (width > MAX_WIDTH) {
+        height = Math.round((height * MAX_WIDTH) / width);
+        width = MAX_WIDTH;
+      }
 
-                  alert('เปลี่ยนรูปโปรไฟล์เรียบร้อยแล้ว!');
-                  window.location.reload();
-                } catch (err) {
-                  console.error('Update avatar error:', err);
-                  alert('เกิดข้อผิดพลาดในการเปลี่ยนรูปโปรไฟล์ กรุณาลองใหม่อีกครั้ง');
-                }
-              }}
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+
+      // แปลงเป็น Base64 คุณภาพ 0.7
+      const base64Avatar = canvas.toDataURL('image/jpeg', 0.7);
+
+      try {
+        // 2. เก็บลง LocalStorage ทันที
+        localStorage.setItem(`partner_avatar_${pKey}`, base64Avatar);
+        localStorage.setItem(`avatar_${pKey}`, base64Avatar);
+        localStorage.setItem('partner_profile_photo', base64Avatar);
+
+        // 3. ซิงค์เข้า Cloud Firestore ทั้ง users และ partners
+        await setDoc(doc(db, 'users', pKey), {
+          avatarUrl: base64Avatar,
+          imageUrl: base64Avatar,
+          avatar: base64Avatar,
+          photoURL: base64Avatar,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        await setDoc(doc(db, 'partners', pKey), {
+          avatarUrl: base64Avatar,
+          imageUrl: base64Avatar,
+          avatar: base64Avatar,
+          photoURL: base64Avatar,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        alert('เปลี่ยนรูปโปรไฟล์เรียบร้อยแล้ว!');
+        window.location.reload();
+      } catch (err) {
+        console.error('Update avatar error:', err);
+        alert('เกิดข้อผิดพลาดในการบันทึกรูปโปรไฟล์');
+      }
+    };
+    img.src = event.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+}}
             />
           </label>
 
