@@ -315,11 +315,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 }
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
-              />
-            </div>
-          <div>
+      />
+    </div>
+  </div>
 
-          {/* Duration with Progressive Discounts */}
+        {/* Duration with Progressive Discounts */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-300">
