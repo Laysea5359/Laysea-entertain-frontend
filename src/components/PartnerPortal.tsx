@@ -892,8 +892,11 @@ const handleStartProgress = async (bookingId: string) => {
               jobs
                 .filter((j: any) => j.status === 'completed' || j.status === 'finished' || j.paymentStatus === 'paid' || j.isReleased)
                 .map((job: any, idx: number) => {
-                  const jobTotal = Number(job.totalPrice || job.totalAmount || job.price || 0);
-                  const netEarn = Math.round(jobTotal * 0.8 * 0.97); // หักคอมมิชชั่น 20% และหัก ณ ที่จ่าย 3%
+                   const duration = Number(job.durationHours || 2);
+                   const jobTotal = Number(job.totalCredits || job.totalPrice || job.totalAmount || (job.pricePerHour ? job.pricePerHour * duration : 0) || job.price || 0);
+                   const grossPart = Math.round(jobTotal * 0.80);
+                   const netEarn = Math.round(grossPart * 0.97);                  
+
 
                   return (
                     <div key={job.id || idx} className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
