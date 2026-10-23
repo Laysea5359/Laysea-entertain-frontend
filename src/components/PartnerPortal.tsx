@@ -778,7 +778,7 @@ const handleStartProgress = async (bookingId: string) => {
             if (job.status !== 'accepted' && job.status !== 'confirmed') return null;
 
             // ตรวจสอบวันและเวลานัดหมาย
-            const targetDateStr = j.date || new Date().toLocaleDateString('en-CA');
+            const targetDateStr = job.date || new Date().toLocaleDateString('en-CA');
             const rawTime = (job.startTime || '19:00').replace('.', ':').trim();
             const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
             
