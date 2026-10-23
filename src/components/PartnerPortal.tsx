@@ -372,7 +372,7 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
         try {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
-          const partnerId = (partner as any)?.id || (userSession as any)?.uid || (userSession as any)?.phone;
+          const partnerId = userSession?.phone || userSession?.id || userSession?.uid;
 
           if (!partnerId) {
             alert('ไม่พบข้อมูลรหัสพาร์ตเนอร์ กรุณาลองใหม่อีกครั้ง');
@@ -380,15 +380,17 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
             return;
           }
 
-          // บันทึกลง Firestore เอกสาร partners
-          const partnerRef = doc(db, 'partners', String(partnerId));
-          await setDoc(partnerRef, {
+          // บันทึกลง Firestore ทั้ง collection 'partners' และ 'users'
+          const gpsData = {
             lat: lat,
             lng: lng,
             latitude: lat,
             longitude: lng,
             lastLocationUpdate: new Date().toISOString()
-          }, { merge: true });
+          };
+
+          await setDoc(doc(db, 'partners', String(partnerId)), gpsData, { merge: true });
+          await setDoc(doc(db, 'users', String(partnerId)), gpsData, { merge: true });
 
           alert(`อัปเดตพิกัด GPS สำเร็จ! (${lat.toFixed(4)}, ${lng.toFixed(4)})\nลูกค้าในระยะใกล้จะค้นหาคุณเจอเป็นลำดับแรก`);
         } catch (error) {
