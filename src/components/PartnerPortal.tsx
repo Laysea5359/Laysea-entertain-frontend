@@ -898,13 +898,14 @@ const handleStartProgress = async (bookingId: string) => {
             })()}
           </div>
 
-              <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
-              <p>
-                แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
-              </p>
-            </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+            <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
+            <p>
+              แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
+            </p>
           </div>
-        )}
+        </div>
+      )}
 
         {/* TAB 4: PROFILE & SETTINGS */}
         {partnerTab === 'profile' && (
