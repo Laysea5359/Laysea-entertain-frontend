@@ -516,43 +516,20 @@ const pendingKycCount = (kycList || []).filter((k) => k.status === 'pending_revi
               </div>
 
               <button
-                onClick={() =>
-                  setMonitoringJob({
-                    id: 'JOB-891234',
-                    clientId: 'USR-CLIENT-01',
-                    clientName: 'คุณสมชาย นรินทร์',
-                    clientPhone: '089-112-2334',
-                    clientPhoneMasked: '089-***-2334',
-                    partnerId: 'partner-1',
-                    partnerName: 'พิมพ์ชนก (น้องพิมพ์)',
-                    partnerImage: INITIAL_PARTNERS[0].imageUrl,
-                    eventType: 'ไปงานแต่งงาน / ดูแลในวงสังสรรค์',
-                    location: 'โรงแรมสยาม เคมปินสกี้ กรุงเทพฯ',
-                    date: '2026-10-18',
-                    startTime: '18:00',
-                    durationHours: 3,
-                    totalAmountBaht: 2400,
-                    totalCredits: 2400,
-                    status: 'accepted',
-                    escrowStatus: 'escrow_held',
-                    platformCommissionRate: 0.20,
-                    platformCommissionBaht: 480,
-                    partnerGrossBaht: 1920,
-                    withholdingTaxRate: 0.03,
-                    withholdingTaxBaht: 57.6,
-                    netPartnerPayoutBaht: 1862.4,
-                    createdAt: new Date().toISOString(),
-                    safetyCheckinStatus: 'active',
-                    etaMinutes: 7,
-                    distanceKm: 1.2,
-                    meetupStatus: 'heading_to_meetup',
-                  })
-                }
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <span>📍 เปิดมอนิเตอร์พิกัด GPS นัดพบ & ความปลอดภัยสด</span>
-              </button>
-            </div>
+            onClick={() => {
+              // หางานที่กำลังดำเนินการอยู่จริงในระบบ (active / accepted)
+              const activeJob = bookings?.find((b: any) => b.status === 'accepted' || b.status === 'in_progress');
+              if (activeJob) {
+                setMonitoringJob(activeJob);
+              } else {
+                alert('ขณะนี้ยังไม่มีงานที่กำลังดำเนินการ (Live Job) ในระบบ');
+              }
+            }}
+            className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>📍 เปิดมอนิเตอร์พิกัด GPS นัดพบ & ความปลอดภัยสด</span>
+          </button>
+         </div>
 
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-white flex items-center gap-1.5">
@@ -591,9 +568,34 @@ const pendingKycCount = (kycList || []).filter((k) => k.status === 'pending_revi
                       </p>
                     </div>
 
-                    <div className="text-[10px] text-amber-300 font-mono">
-                      GPS: {inc.latitude}, {inc.longitude}
-                    </div>
+                    {(() => {
+              // 1. ดึงพิกัดจากฟิลด์ตรงๆ (รองรับทั้ง lat, lng, latitude, longitude)
+              let lat = inc.lat || inc.latitude;
+              let lng = inc.lng || inc.longitude;
+
+              // 2. ถ้าในฟิลด์ไม่มี ให้แกะพิกัดสดจากข้อความแจ้งเตือน [GPS: xx, yy]
+              if ((!lat || !lng) && inc.message && inc.message.includes('[GPS:')) {
+                const match = inc.message.match(/\[GPS:\s*([\d.]+),\s*([\d.]+)\]/);
+                if (match) {
+                  lat = match[1];
+                  lng = match[2];
+                }
+              }
+
+              return lat && lng ? (
+                <a
+                  href={`https://www.google.com/maps?q=${lat},${lng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 rounded text-[10px] text-amber-300 font-mono transition-all hover:underline cursor-pointer"
+                  title="คลิกเปิด Google Maps เพื่อดูตำแหน่งจริง"
+                >
+                  <span>📍 GPS: {Number(lat).toFixed(4)}, {Number(lng).toFixed(4)} (เปิด Maps)</span>
+                </a>
+              ) : (
+                <span className="text-[10px] text-slate-500 font-mono">GPS: ไม่ระบุพิกัด</span>
+              );
+            })()}
                   </div>
 
                   <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs text-rose-200">
