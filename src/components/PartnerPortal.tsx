@@ -60,29 +60,6 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
   const [isLiveTrackingOpen, setIsLiveTrackingOpen] = useState(false);
   const [selectedTrackingJob, setSelectedTrackingJob] = useState<any>(null);
 
-// เก็บรูปภาพอัลบั้ม 1-6 รูป
-  const [galleryImages, setGalleryImages] = useState<string[]>(() => {
-    const saved = localStorage.getItem(`gallery_${userSession?.phone}`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // จัดการเรตราคาและงานที่รับแบบ Local State (ติ๊กได้ทันที Real-time)
-  const [serviceRates, setServiceRates] = useState<any>(() => {
-    if (typeof window !== 'undefined') {
-      const pKey = userSession?.phone || userSession?.id;
-      const saved = localStorage.getItem(`partner_service_rates_${pKey}`);
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
-    }
-    return userSession?.serviceRates || {
-      cafe: { enabled: true, rate: 450, name: '☕ ทานข้าว / คาเฟ่ / เดินห้าง' },
-      movie: { enabled: false, rate: 500, name: '🎬 ดูหนัง / กิจกรรมไลฟ์สไตล์' },
-      party: { enabled: false, rate: 700, name: '🍻 ปาร์ตี้ / สังสรรค์ / ชงดื่ม' },
-      event: { enabled: false, rate: 900, name: '👗 ออกงานสังคม / งานแต่ง / ทางการ' }
-    };
-  });
-
   useEffect(() => {
     const checkKycStatus = async () => {
       const phone = userSession?.phone;
@@ -254,9 +231,9 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
 
 // ระบบส่งเสียง + สั่นเตือนพาร์ทเนอร์ล่วงหน้า 1 ชม. ก่อนเวลานัด
   useEffect(() => {
-    const upcomingJob = activeJobs.find((j: any) => {
+    const upcomingJob = activeJobs?.find((j: any) => {
       if (j.status !== 'accepted' && j.status !== 'confirmed') return false;
-      const targetDateStr = job.date || new Date().toLocaleDateString('en-CA');
+      const targetDateStr = j.date || new Date().toLocaleDateString('en-CA');
       const rawTime = (j.startTime || '19:00').replace('.', ':').trim();
       const targetTimeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
       const targetTime = new Date(`${targetDateStr}T${targetTimeStr}`).getTime();
@@ -279,6 +256,29 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
       }
     }
   }, [activeJobs]);
+
+// เก็บรูปภาพอัลบั้ม 1-6 รูป
+  const [galleryImages, setGalleryImages] = useState<string[]>(() => {
+    const saved = localStorage.getItem(`gallery_${userSession?.phone}`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+// จัดการเรตราคาและงานที่รับแบบ Local State (ติ๊กได้ทันที Real-time)
+  const [serviceRates, setServiceRates] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      const pKey = userSession?.phone || userSession?.id;
+      const saved = localStorage.getItem(`partner_service_rates_${pKey}`);
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+      }
+    }
+    return userSession?.serviceRates || {
+      cafe: { enabled: true, rate: 450, name: '☕ ทานข้าว / คาเฟ่ / เดินห้าง' },
+      movie: { enabled: false, rate: 500, name: '🎬 ดูหนัง / กิจกรรมไลฟ์สไตล์' },
+      party: { enabled: false, rate: 700, name: '🍻 ปาร์ตี้ / สังสรรค์ / ชงดื่ม' },
+      event: { enabled: false, rate: 900, name: '👗 ออกงานสังคม / งานแต่ง / ทางการ' }
+    };
+  });
 
   // ฟังก์ชันเลือกรูปภาพเข้าอัลบั้ม (แปลงเป็น Base64 ป้องกันปัญหา CORS Cloud Storage 100%)
   const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
