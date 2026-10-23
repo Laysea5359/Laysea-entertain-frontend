@@ -821,84 +821,83 @@ const handleStartProgress = async (bookingId: string) => {
             </button>
           </div>
         </div>
-{/* ประวัติรายการรับงาน & รายได้รายวัน */}
+
+     {/* ประวัติรายการรับงาน & รายได้รายวัน (Real-time 100% ไม่มี Mockup) */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <span className="text-sm font-bold text-slate-200">ประวัติรับงาน & รายได้ที่เสร็จสิ้น</span>
-              <span className="text-xs text-slate-400">
-                {jobs.filter((j) => j.status === 'completed').length > 0 
-                  ? `${jobs.filter((j) => j.status === 'completed').length} รายการ` 
-                  : 'ยังไม่มีประวัติงาน'}
-              </span>
-            </div>
+            {(() => {
+              // กรองเฉพาะงานของพาร์ทเนอร์คนนี้ที่จบงานแล้ว / ลูกค้าปล่อยเงินแล้ว
+              const finishedJobs = (jobs || []).filter((j: any) => {
+                const status = (j.status || '').toLowerCase();
+                const payStatus = (j.paymentStatus || '').toLowerCase();
+                return (
+                  status === 'completed' || 
+                  status === 'finished' || 
+                  status === 'success' || 
+                  payStatus === 'paid' || 
+                  j.isReleased === true
+                );
+              });
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {jobs.filter((j) => j.status === 'completed').length > 0 ? (
-                jobs
-                  .filter((j) => j.status === 'completed')
-                  .map((j) => {
-                    const gross = j.partnerGrossBaht || (j.totalAmountBaht ? j.totalAmountBaht * 0.8 : 0);
-                    const net = j.netPartnerPayoutBaht || gross * 0.97;
-                    return (
-                      <div key={j.id} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                            {j.eventType || 'เพื่อนดูแล / สังสรรค์'}
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            📅 วันที่: {j.date || new Date().toLocaleDateString('th-TH')} • {j.durationHours || 6} ชม.
-                          </div>
-                          <div className="text-[10px] text-slate-500">
-                            ลูกค้า: {j.clientName || 'ลูกค้าทั่วไป'}
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="text-xs font-bold text-amber-300">
-                            +{net.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
-                          </div>
-                          <div className="text-[9px] text-slate-400">
-                            (หัก 3% แล้ว)
-                          </div>
-                          <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
-                            โอนสำเร็จ
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
-              ) : (
-                <div className="p-3 bg-slate-800/40 rounded-xl border border-slate-700/40 flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-xs text-slate-300 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                      ดูแลในวงสังสรรค์ / ปาร์ตี้
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      📅 วันที่: 20 ต.ค. 2569 • 6 ชม.
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      ลูกค้า: Laysea
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs font-bold text-amber-300">
-                      +1,769.28 ฿
-                    </div>
-                    <div className="text-[9px] text-slate-400">
-                      (หัก 3% แล้ว)
-                    </div>
-                    <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
-                      โอนสำเร็จ
+              return (
+                <>
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <span className="text-sm font-bold text-slate-200">ประวัติรับงาน & รายได้ที่เสร็จสิ้น</span>
+                    <span className="text-xs text-slate-400">
+                      {finishedJobs.length > 0 ? `${finishedJobs.length} รายการ` : 'ยังไม่มีประวัติงาน'}
                     </span>
                   </div>
-                </div>
-              )}
-            </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {finishedJobs.length > 0 ? (
+                      finishedJobs.map((j: any) => {
+                        const total = Number(j.totalAmountBaht || j.totalPrice || j.price || 0);
+                        const gross = Number(j.partnerGrossBaht || j.partnerEarnings || (total * 0.8) || 0);
+                        const net = Number(j.netPartnerPayoutBaht || (gross * 0.97) || 0);
+
+                        return (
+                          <div 
+                            key={j.id || Math.random()} 
+                            className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between"
+                          >
+                            <div>
+                              <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                                {j.eventType || j.serviceType || 'เพื่อนดูแล / สังสรรค์'}
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                📅 วันที่: {j.date || j.bookingDate || new Date().toLocaleDateString('th-TH')} • {j.durationHours || j.hours || 2} ชม.
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                ลูกค้า: {j.clientName || j.customerName || j.userName || 'ลูกค้าทั่วไป'}
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <div className="text-xs font-bold text-amber-300">
+                                +{net.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
+                              </div>
+                              <div className="text-[9px] text-slate-400">
+                                (หัก 3% แล้ว)
+                              </div>
+                              <span className="inline-block mt-0.5 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30 font-medium">
+                                โอนสำเร็จ
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      /* แสดงเมื่อยังไม่มีงานเสร็จสิ้นจริง ตัด Mockup ทิ้งถาวร */
+                      <div className="py-6 text-center text-slate-500 text-xs">
+                        ยังไม่มีรายการงานที่เสร็จสิ้น
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
-            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
               <strong className="text-slate-300">หมายเหตุภาษีสำหรับพาร์ทเนอร์:</strong>
               <p>
                 แพลตฟอร์ม Laysea ดำเนินการหักและนำส่งภาษีเงินได้หัก ณ ที่จ่าย 3% ให้กรมสรรพากรอย่างถูกต้อง ท่านสามารถนำใบ 50 ทวิ ไปใช้ยื่นลดหย่อนหรือขอคืนภาษีประจำปี (ภ.ง.ด. 90/91) ได้
