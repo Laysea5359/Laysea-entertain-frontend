@@ -45,6 +45,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, userSession 
   const [monitoringJob, setMonitoringJob] = useState<Booking | null>(null);
   const [activeSosModal, setActiveSosModal] = useState<any | null>(null);
   const [sosAudio, setSosAudio] = useState<HTMLAudioElement | null>(null);
+  const [dismissedSosIds, setDismissedSosIds] = useState<string[]>([]);
+
 
   const fetchAdminData = async () => {
     try {
@@ -69,13 +71,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, userSession 
     return () => clearInterval(interval);
   }, []);
 
-  // ระบบเสียงไซเรนฉุกเฉิน + สั่นแจ้งเตือนแอดมินแบบ Real-time
+  // ระบบเสียงไซเรนฉุกเฉิน + สั่นแจ้งเตือนแอดมินแบบ Real-time (ป้องกันการเด้งซ้ำเคสเดิม)
   useEffect(() => {
-    const unhandledSos = incidents.find((inc: any) => inc.status !== 'resolved');
+    const unhandledSos = incidents.find((inc: any) => {
+      const incId = inc.id || inc._id || inc.timestamp || inc.createdAt;
+      return inc.status !== 'resolved' && !dismissedSosIds.includes(incId);
+    });
+
     if (unhandledSos && !activeSosModal) {
       setActiveSosModal(unhandledSos);
 
-      // 1. สั่นเตือนเครื่องแอดมิน (สั่นยาว-สั้น-ยาว)
+      // 1. สั่นเตือนเครื่องแอดมิน
       if (typeof window !== 'undefined' && 'vibrate' in navigator) {
         navigator.vibrate([600, 200, 600, 200, 1000]);
       }
@@ -88,7 +94,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, userSession 
         setSosAudio(audio);
       } catch (e) {}
     }
-  }, [incidents]);
+  }, [incidents, dismissedSosIds, activeSosModal]);
 
   // ฟังก์ชันหยุดเสียงและรับเรื่อง
   const handleAcknowledgeSos = () => {
@@ -96,6 +102,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, userSession 
       sosAudio.pause();
       sosAudio.currentTime = 0;
       setSosAudio(null);
+    }
+    if (activeSosModal) {
+      const currentId = activeSosModal.id || activeSosModal._id || activeSosModal.timestamp || activeSosModal.createdAt;
+      if (currentId) {
+        setDismissedSosIds((prev) => [...prev, currentId]);
+      }
     }
     setActiveSosModal(null);
   };
