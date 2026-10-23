@@ -24,6 +24,19 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
+// ฟังก์ชันคำนวณระยะทางระหว่าง 2 พิกัด (กิโลเมตร)
+const getDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371; // รัศมีโลกเฉลี่ย
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round((R * c) * 10) / 10;
+};
+
 interface PartnerCatalogProps {
   partners: Partner[];
   onSelectVdoCall: (partner: Partner) => void;
@@ -37,6 +50,12 @@ export const PartnerCatalog: React.FC<PartnerCatalogProps> = ({
   onSelectBook,
   onOpenAiMatching,
 }) => {
+
+      // พิกัด GPS ของลูกค้า
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // สวิตช์เปิดดูพาร์ตเนอร์ระยะไกล (ค่าเริ่มต้น false = เน้นคนที่อยู่ใกล้)
+  const [showFarPartners, setShowFarPartners] = useState<boolean>(false);
+
   const [selectedGender, setSelectedGender] = useState<'all' | 'female' | 'male' | 'lgbtq'>('all');
   const [selectedLgbtqSubtype, setSelectedLgbtqSubtype] = useState<'all' | LgbtqSubtype>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -47,6 +66,25 @@ const [approvedPartners, setApprovedPartners] = useState<any[]>([]);
 // State สำหรับเปิดดูอัลบั้มรูป 1-6 รูป
   const [galleryPartner, setGalleryPartner] = useState<Partner | null>(null);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
+
+// ดึงพิกัดจริงของลูกค้าผ่านเบราว์เซอร์อัตโนมัติ
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserCoords({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
+        },
+        (err) => {
+          // หากลูกค้าไม่อนุญาต GPS ให้ใช้พิกัดเริ่มต้น (โซนบางแสน/ชลบุรี)
+          setUserCoords({ lat: 13.2849, lng: 100.9248 });
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+  }, []);
 
 useEffect(() => {
     let isMounted = true;
@@ -235,7 +273,26 @@ useEffect(() => {
     }
 
     return true;
-  });
+  })
+  // 📍 5. คำนวณระยะทางจาก GPS ลูกค้า
+  .map((p: any) => {
+    let distanceKm = 999;
+    if (userCoords && (p.lat || p.latitude) && (p.lng || p.longitude)) {
+      const pLat = Number(p.lat || p.latitude);
+      const pLng = Number(p.lng || p.longitude);
+      distanceKm = getDistanceKm(userCoords.lat, userCoords.lng, pLat, pLng);
+    } else if (p.distanceKm) {
+      distanceKm = Number(p.distanceKm);
+    }
+    return { ...p, distanceKm };
+  })
+  // 📍 6. กรองระยะทาง (ถ้าไม่ได้เปิดโหมดดูไกล ให้แสดงเฉพาะในระยะ 35 กม. หรือคนที่มีพิกัด)
+  .filter((p: any) => {
+    if (showFarPartners) return true; // ลูกค้าเลือกดูทั่วประเทศ/ระยะไกล
+    return p.distanceKm <= 35 || p.distanceKm === 999; // เน้นคนใกล้ก่อน
+  })
+  // 📍 7. จัดลำดับ: เอาคนที่ใกล้ลูกค้าที่สุดขึ้นก่อนเสมอ
+  .sort((a: any, b: any) => a.distanceKm - b.distanceKm);
 
   return (
     <div className="space-y-6">
@@ -415,6 +472,27 @@ useEffect(() => {
         </div>
       </div>
 
+{/* แถบสลับโหมดใกล้ฉัน / ทั่วประเทศ */}
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl mb-4">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-amber-400">📍</span>
+          <span className="text-slate-300 font-medium">
+            {showFarPartners ? 'กำลังแสดง: ทุกระยะทาง / ทั่วประเทศ' : 'กำลังแสดง: พาร์ตเนอร์ใกล้คุณ (ไม่เกิน 35 กม.)'}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowFarPartners(!showFarPartners)}
+          className={`text-xs px-3 py-1 rounded-lg font-bold transition-all ${
+            showFarPartners 
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' 
+              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          {showFarPartners ? '✓ ดูทั่วประเทศ' : '+ ค้นหาระยะไกล'}
+        </button>
+      </div>
+
       {/* Grid of Partners */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredPartners.map((partner) => (
@@ -565,10 +643,19 @@ useEffect(() => {
                     <h3 className="text-lg font-bold text-white tracking-tight">
                       {partner.name} <span className="text-rose-400 text-sm font-normal">({partner.nickname})</span>
                     </h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-300 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      <span className="truncate">{partner.location}</span>
-                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-300 mt-0.5 flex-wrap">
+                  <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span className="truncate">{partner.location}</span>
+                  {partner.distanceKm !== undefined && partner.distanceKm !== 999 ? (
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-mono font-medium ml-1">
+                      📍 {partner.distanceKm} กม.
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded ml-1">
+                      📍 ไม่ระบุพิกัด
+                    </span>
+                  )}
+                </div>
                   </div>
                   <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-2 py-0.5 rounded text-xs font-bold shrink-0">
                     <Star className="w-3 h-3 fill-amber-400 text-amber-400" />

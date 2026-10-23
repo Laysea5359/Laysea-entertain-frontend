@@ -350,12 +350,61 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
   const [jobs, setJobs] = useState<Booking[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [activeTrackingJob, setActiveTrackingJob] = useState<Booking | null>(null);
+  const [isUpdatingGps, setIsUpdatingGps] = useState<boolean>(false);
+
 
 // --- ประกาศตัวแปรคำนวณงานและรายได้ระดับบนสุดของคอมโพเนนต์ ---
   const activeJobs = (jobs || []).filter((j: any) => 
     !j?.isDeletedByPartner && 
     ['pending', 'requested', 'accepted', 'confirmed', 'in_progress'].includes(j?.status)
   );
+
+    // ฟังก์ชันอัปเดตพิกัดตำแหน่งปัจจุบันของพาร์ตเนอร์ลง Firestore
+  const handleUpdatePartnerGps = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      alert('อุปกรณ์ของคุณไม่รองรับการระบุตำแหน่ง GPS');
+      return;
+    }
+
+    setIsUpdatingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const partnerId = (partner as any)?.id || (userSession as any)?.uid || (userSession as any)?.phone;
+
+          if (!partnerId) {
+            alert('ไม่พบข้อมูลรหัสพาร์ตเนอร์ กรุณาลองใหม่อีกครั้ง');
+            setIsUpdatingGps(false);
+            return;
+          }
+
+          // บันทึกลง Firestore เอกสาร partners
+          const partnerRef = doc(db, 'partners', String(partnerId));
+          await setDoc(partnerRef, {
+            lat: lat,
+            lng: lng,
+            latitude: lat,
+            longitude: lng,
+            lastLocationUpdate: new Date().toISOString()
+          }, { merge: true });
+
+          alert(`อัปเดตพิกัด GPS สำเร็จ! (${lat.toFixed(4)}, ${lng.toFixed(4)})\nลูกค้าในระยะใกล้จะค้นหาคุณเจอเป็นลำดับแรก`);
+        } catch (error) {
+          console.error('GPS Update Error:', error);
+          alert('เกิดข้อผิดพลาดในการบันทึกพิกัดลงฐานข้อมูล');
+        } finally {
+          setIsUpdatingGps(false);
+        }
+      },
+      (err) => {
+        setIsUpdatingGps(false);
+        alert('กรุณากดยินยอมการเข้าถึงตำแหน่งที่ตั้ง (GPS) บนเบราว์เซอร์เพื่อบันทึกพิกัด');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
 // ระบบส่งเสียง + สั่นเตือนพาร์ทเนอร์ล่วงหน้า 1 ชม. ก่อนเวลานัด
   useEffect(() => {
@@ -681,6 +730,18 @@ const handleStartProgress = async (bookingId: string) => {
             </p>
           </div>
         </div>
+
+     {/* ปุ่มอัปเดตพิกัด GPS สำหรับพาร์ตเนอร์ */}
+        <button
+          type="button"
+          onClick={handleUpdatePartnerGps}
+          disabled={isUpdatingGps}
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-amber-400 border border-amber-500/30 rounded-xl text-[11px] font-medium transition-all shadow-sm shrink-0 disabled:opacity-50"
+          title="กดเพื่ออัปเดตพิกัดปัจจุบันให้ลูกค้าค้นหาเจอในระยะใกล้"
+        >
+          <span>📍</span>
+          <span>{isUpdatingGps ? 'กำลังระบุ...' : 'อัปเดต GPS'}</span>
+        </button>
 
         <button
           onClick={onLogout}
