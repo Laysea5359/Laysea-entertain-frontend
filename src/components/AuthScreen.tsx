@@ -32,6 +32,23 @@ const [email, setEmail] = useState('');
   const [gender, setGender] = useState<Gender>('female');
   const [lgbtqSubtype, setLgbtqSubtype] = useState<LgbtqSubtype>('trans_woman');
   const [password, setPassword] = useState('');
+
+// ระบบจดจำผู้ใช้งาน (Remember Me)
+  const [rememberMe, setRememberMe] = useState<boolean>(() => {
+    return localStorage.getItem('laysea_remember_me') === 'true';
+  });
+
+  // โหลดเบอร์โทรและรหัสผ่านที่บันทึกไว้อัตโนมัติเมื่อเปิดหน้าจอ
+  useEffect(() => {
+    const isRemembered = localStorage.getItem('laysea_remember_me') === 'true';
+    if (isRemembered) {
+      const savedPhone = localStorage.getItem('laysea_saved_phone');
+      const savedPassword = localStorage.getItem('laysea_saved_password');
+      if (savedPhone) setPhone(savedPhone);
+      if (savedPassword) setPassword(savedPassword);
+    }
+  }, []);
+
 const [confirmPassword, setConfirmPassword] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
 const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -203,7 +220,7 @@ const res = await fetch(`${apiUrl}/api/auth/admin-login`, {
           return;
         }
 
-        if (data.success && data.session) {
+        if (data.success && data.session) {  
           onLogin(data.session);
           return;
         } else {
@@ -318,6 +335,18 @@ const res = await fetch(`${apiUrl}/api/auth/login`, {
       }
 
       if (data.success && data.session) {
+        
+   // บันทึกสถานะ Remember Me ลงเครื่อง
+        if (rememberMe) {
+          localStorage.setItem('laysea_remember_me', 'true');
+          localStorage.setItem('laysea_saved_phone', phone);
+          localStorage.setItem('laysea_saved_password', password);
+        } else {
+          localStorage.removeItem('laysea_remember_me');
+          localStorage.removeItem('laysea_saved_phone');
+          localStorage.removeItem('laysea_saved_password');
+        }
+
         onLogin(data.session);
         return;
       } else {
@@ -845,8 +874,22 @@ const res = await fetch(`${apiUrl}/api/auth/login`, {
   </div>
 </div>
 
-{/* Confirm Password Field (แสดงเฉพาะตอนสมัครสมาชิก) */}
-{isSignUp && (
+    {!isSignUp && (
+          <div className="flex items-center justify-between py-1 my-1 text-xs text-slate-400">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-rose-500 cursor-pointer"
+              />
+              <span className="text-slate-300">จดจำเบอร์โทรและรหัสผ่าน</span>
+            </label>
+          </div>
+        )}
+
+      {/* Confirm Password Field (แสดงเฉพาะตอนสมัครสมาชิก) */}
+     {isSignUp && (
   <div>
     <label className="block text-xs font-semibold text-slate-300 mb-1">
       ยืนยันรหัสผ่านอีกครั้ง (Confirm Password):
