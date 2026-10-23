@@ -155,6 +155,23 @@ const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending_review' | 
     return saved ? JSON.parse(saved) : [];
   });
 
+// จัดการเรตราคาและงานที่รับแบบ Local State (ติ๊กได้ทันที Real-time)
+  const [serviceRates, setServiceRates] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      const pKey = userSession?.phone || userSession?.id;
+      const saved = localStorage.getItem(`partner_service_rates_${pKey}`);
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+      }
+    }
+    return userSession?.serviceRates || {
+      cafe: { enabled: true, rate: 450, name: '☕ ทานข้าว / คาเฟ่ / เดินห้าง' },
+      movie: { enabled: false, rate: 500, name: '🎬 ดูหนัง / กิจกรรมไลฟ์สไตล์' },
+      party: { enabled: false, rate: 700, name: '🍻 ปาร์ตี้ / สังสรรค์ / ชงดื่ม' },
+      event: { enabled: false, rate: 900, name: '👗 ออกงานสังคม / งานแต่ง / ทางการ' }
+    };
+  });
+
   // ฟังก์ชันเลือกรูปภาพเข้าอัลบั้ม (แปลงเป็น Base64 ป้องกันปัญหา CORS Cloud Storage 100%)
   const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
