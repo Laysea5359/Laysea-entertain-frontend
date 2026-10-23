@@ -55,7 +55,30 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   if (!partner) return null;
 
-  const pricingBreakdown = calculateProgressiveBookingPrice(partner.hourlyRate, durationHours);
+  // 1. ดึงเรตราคาตามประเภทงานที่ลูกค้าเลือกจริงแบบ Real-time
+  const getDynamicHourlyRate = () => {
+    const rates = (partner as any)?.serviceRates || {};
+    
+    if (eventType.includes('คาเฟ่') || eventType.includes('ข้าว')) {
+      return Number(rates.cafe?.rate || 450);
+    }
+    if (eventType.includes('ดูหนัง') || eventType.includes('เกะ')) {
+      return Number(rates.movie?.rate || 500);
+    }
+    if (eventType.includes('ปาร์ตี้') || eventType.includes('สังสรรค์')) {
+      return Number(rates.party?.rate || 700);
+    }
+    if (eventType.includes('แต่งงาน') || eventType.includes('ออกงาน') || eventType.includes('Fine Dining')) {
+      return Number(rates.event?.rate || 900);
+    }
+
+    return Number(partner.hourlyRate || 450);
+  };
+
+  const currentRatePerHour = getDynamicHourlyRate();
+
+  // 2. คำนวณราคาใหม่ตามเรตของงานที่เลือก
+  const pricingBreakdown = calculateProgressiveBookingPrice(currentRatePerHour, durationHours);
   const totalCredits = pricingBreakdown.totalPrice;
   const hasEnoughCredits = userCredits >= totalCredits;
 
