@@ -43,6 +43,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, userSession 
   const [copiedFormula, setCopiedFormula] = useState(false);
   const [actionSuccessNotice, setActionSuccessNotice] = useState<string | null>(null);
   const [monitoringJob, setMonitoringJob] = useState<Booking | null>(null);
+  const [activeSosModal, setActiveSosModal] = useState<any | null>(null);
+  const [sosAudio, setSosAudio] = useState<HTMLAudioElement | null>(null);
 
   const fetchAdminData = async () => {
     try {
@@ -66,6 +68,37 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, userSession 
     const interval = setInterval(fetchAdminData, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // ระบบเสียงไซเรนฉุกเฉิน + สั่นแจ้งเตือนแอดมินแบบ Real-time
+  useEffect(() => {
+    const unhandledSos = incidents.find((inc: any) => inc.status !== 'resolved');
+    if (unhandledSos && !activeSosModal) {
+      setActiveSosModal(unhandledSos);
+
+      // 1. สั่นเตือนเครื่องแอดมิน (สั่นยาว-สั้น-ยาว)
+      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate([600, 200, 600, 200, 1000]);
+      }
+
+      // 2. ส่งเสียงไซเรนเตือนต่อเนื่อง
+      try {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.loop = true;
+        audio.play().catch(() => {});
+        setSosAudio(audio);
+      } catch (e) {}
+    }
+  }, [incidents]);
+
+  // ฟังก์ชันหยุดเสียงและรับเรื่อง
+  const handleAcknowledgeSos = () => {
+    if (sosAudio) {
+      sosAudio.pause();
+      sosAudio.currentTime = 0;
+      setSosAudio(null);
+    }
+    setActiveSosModal(null);
+  };
 
   const totalGross = transactions.reduce((acc, t) => acc + t.amountBaht, 0);
   const totalPlatformCut = transactions.reduce((acc, t) => acc + t.platformCutBaht, 0);
@@ -829,6 +862,75 @@ const pendingKycCount = (kycList || []).filter((k) => k.status === 'pending_revi
           onClose={() => setMonitoringJob(null)}
           onOpenSos={() => setMonitoringJob(null)}
         />
+      )}
+
+       {/* 🚨 Emergency Alert Modal: แจ้งเตือนเหตุฉุกเฉิน SOS สำหรับแอดมิน */}
+      {activeSosModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border-2 border-red-500 rounded-3xl p-6 max-w-lg w-full text-white shadow-[0_0_50px_rgba(239,68,68,0.4)] relative">
+            
+            {/* Header: ไฟฉุกเฉินกระพริบ */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center shrink-0 animate-bounce">
+                <Siren className="w-7 h-7 text-red-500 animate-pulse" />
+              </div>
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white uppercase tracking-wider animate-pulse">
+                  CRITICAL EMERGENCY
+                </span>
+                <h3 className="text-xl font-black text-red-400 mt-1">สัญญาณฉุกเฉิน SOS!</h3>
+              </div>
+            </div>
+
+            {/* รายละเอียดเหตุการณ์ */}
+            <div className="bg-slate-950/80 rounded-2xl p-4 border border-slate-800 space-y-3 mb-5 text-sm">
+              <div>
+                <p className="text-xs text-slate-400">ประเภทเหตุการณ์</p>
+                <p className="font-semibold text-rose-300 text-base">{activeSosModal.reason || 'ขอความช่วยเหลือฉุกเฉินทันที'}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                <div>
+                  <p className="text-xs text-slate-400">ผู้ส่งสัญญาณ</p>
+                  <p className="font-medium text-slate-200">{activeSosModal.partnerName || activeSosModal.userName || 'พาร์ตเนอร์ในระบบ'}</p>
+                  <p className="text-xs text-slate-400">{activeSosModal.partnerPhone || activeSosModal.userPhone || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">พิกัด GPS</p>
+                  <p className="font-mono text-xs text-amber-400">
+                    {activeSosModal.lat && activeSosModal.lng 
+                      ? `${Number(activeSosModal.lat).toFixed(4)}, ${Number(activeSosModal.lng).toFixed(4)}`
+                      : 'ไม่ระบุพิกัด'}
+                  </p>
+                  {activeSosModal.lat && activeSosModal.lng && (
+                    <a
+                      href={`https://www.google.com/maps?q=${activeSosModal.lat},${activeSosModal.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-sky-400 hover:underline mt-0.5"
+                    >
+                      <span>เปิด Google Maps</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ปุ่มรับเรื่อง / ปิดเสียงเตือน */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleAcknowledgeSos}
+                className="flex-1 py-3 px-4 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-red-900/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>รับเรื่องและปิดเสียงไซเรน</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
     </div>
   );
