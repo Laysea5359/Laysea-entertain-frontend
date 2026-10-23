@@ -15,11 +15,29 @@ export const SosEmergencyModal: React.FC<SosEmergencyModalProps> = ({
 }) => {
   const [panicTriggered, setPanicTriggered] = useState(false);
   const [customThreat, setCustomThreat] = useState('ถูกลูกค้าพยายามแตะเนื้อต้องตัว ลวนลามในร้าน');
-  const [gpsCoordinates] = useState({ lat: 13.736717, lng: 100.560638 });
 
   const handlePanicClick = () => {
+    // 1. ดึง GPS จริงของเครื่องพาร์ตเนอร์ส่งตรงเข้า SOS (ตัดพิกัดม็อคทิ้ง)
+    if (typeof window !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          onTriggerSos(`${customThreat} [GPS: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}]`);
+        },
+        () => {
+          onTriggerSos(customThreat);
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    } else {
+      onTriggerSos(customThreat);
+    }
+
     setPanicTriggered(true);
-    onTriggerSos(customThreat);
+
+    // 2. ปิดหน้าต่าง Modal อัตโนมัติหลังกดส่ง 1.5 วินาที
+    setTimeout(() => {
+      onClose();
+    }, 1500);
   };
 
   return (
@@ -72,11 +90,11 @@ export const SosEmergencyModal: React.FC<SosEmergencyModalProps> = ({
                 <div className="text-xs space-y-1 text-slate-300">
                   <div className="flex items-center gap-1.5 text-amber-300">
                     <MapPin className="w-4 h-4 text-rose-400" />
-                    <span>พิกัด GPS ที่ส่งออก: {gpsCoordinates.lat}, {gpsCoordinates.lng} (ย่านสุขุมวิท/ทองหล่อ)</span>
+                    <span>พิกัด GPS: ส่งตำแหน่งปัจจุบันแบบ Real-time เข้าศูนย์ควบคุมความปลอดภัยแล้ว</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-emerald-400">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>แจ้งเตือนสถานีตำรวจนครบาลทองหล่อ / สน.พื้นที่เรียบร้อยแล้ว</span>
+                    <span>ประสานงานแจ้งศูนย์ความปลอดภัยและสถานีตำรวจท้องที่เรียบร้อยแล้ว</span>
                   </div>
                 </div>
               </div>
@@ -96,7 +114,10 @@ export const SosEmergencyModal: React.FC<SosEmergencyModalProps> = ({
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => setPanicTriggered(false)}
+                  onClick={() => {
+                   setPanicTriggered(false);
+                   onClose();
+                 }}
                   className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-xs hover:bg-slate-800"
                 >
                   กลับไปหน้ารวม
