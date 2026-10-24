@@ -43,8 +43,48 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   onDeductCredits,
   onOpenWallet,
 }) => {
+  // 1. นำ 2 บรรทัดเดิมนี้ใส่กลับเข้ามา
   const [eventType, setEventType] = useState('ดูแลในวงสังสรรค์ / ปาร์ตี้');
   const [location, setLocation] = useState('');
+
+  // 2. ตัวแปรพิกัดและฟังก์ชันดึงตำแหน่งที่เพิ่งวาง (ถูกต้องแล้ว)
+  const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+
+  // ดึงตำแหน่งสดของลูกค้า + Reverse Geocoding เป็นชื่อสถานที่ใกล้เคียง
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('อุปกรณ์ของคุณไม่รองรับการระบุตำแหน่ง GPS');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setLocationCoords({ lat, lng });
+
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+            { headers: { 'Accept-Language': 'th' } }
+          );
+          const data = await res.json();
+          const placeName = data.display_name?.split(',').slice(0, 3).join(', ') || `พิกัดใกล้ฉัน (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+          setLocation(placeName);
+        } catch {
+          setLocation(`ตำแหน่งปัจจุบันของฉัน (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+        }
+        setIsLocating(false);
+      },
+      (err) => {
+        setIsLocating(false);
+        alert('กรุณาเปิดสิทธิ์เข้าถึงตำแหน่ง (GPS) ในเบราว์เซอร์');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   const [date, setDate] = useState<string>(() => {
     return new Date().toLocaleDateString('en-CA');
   });
@@ -150,6 +190,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         status: 'pending', // ให้เป็นสถานะรอพาร์ทเนอร์กดรับงาน
         escrowStatus: 'held',
         meetupStatus: 'pending',
+        lat: locationCoords?.lat || null,
+        lng: locationCoords?.lng || null,
         createdAt: new Date().toISOString()
       };
 
@@ -267,20 +309,60 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           </div>
 
           {/* Location */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-rose-400" />
-              <span>สถานที่นัดพบ (ร้านอาหาร / โรงแรม / สถานที่สาธารณะ):</span>
-            </label>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                <span>สถานที่นัดพบ (ร้านอาหาร / คาเฟ่ / โรงแรม):</span>
+              </label>
+              {location && (
+                <a
+                  href={
+                    locationCoords
+                      ? `https://www.google.com/maps?q=${locationCoords.lat},${locationCoords.lng}`
+                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] text-sky-400 hover:text-sky-300 underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>ตรวจหมุดบน Google Maps ↗</span>
+                </a>
+              )}
+            </div>
+
+            {/* ช่องพิมพ์ระบุสถานที่ */}
             <input
               type="text"
               required
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="เช่น ร้านอาหารรูฟท็อป ทองหล่อ, สยามพารากอน"
+              onChange={(e) => {
+                setLocation(e.target.value);
+                setLocationCoords(null);
+              }}
+              placeholder="พิมพ์ชื่อสถานที่ ร้านกาแฟ หรือโรงแรมใกล้คุณ..."
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500"
             />
-            <p className="text-[10px] text-slate-500 mt-1">
+
+            {/* ปุ่มกดดึงพิกัดที่ลูกค้าอยู่ตอนนี้ */}
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                disabled={isLocating}
+                className="px-2.5 py-1.5 bg-sky-950/80 hover:bg-sky-900 border border-sky-600/50 rounded-xl text-[11px] text-sky-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+              >
+                <span>{isLocating ? '⏳ กำลังค้นหาตำแหน่ง...' : '🎯 ใช้ตำแหน่งที่ฉันอยู่ตอนนี้'}</span>
+              </button>
+              
+              {locationCoords && (
+                <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/50 px-2 py-1 rounded-lg border border-emerald-800/40">
+                  ✓ พิกัด: {locationCoords.lat.toFixed(4)}, {locationCoords.lng.toFixed(4)}
+                </span>
+              )}
+            </div>
+
+            <p className="text-[10px] text-slate-500">
               * ข้อมูลที่อยู่ละเอียดจะถูกซ่อนเพื่อความปลอดภัย จนกว่าพาร์ทเนอร์จะกดยืนยันรับงาน
             </p>
           </div>
@@ -295,29 +377,41 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 type="date"
                 required
                 value={date}
-                min={new Date().toLocaleDateString('en-CA')} // ล็อกวันตามเวลาท้องถิ่น YYYY-MM-DD
+                min={new Date().toLocaleDateString('en-CA')}
+                onClick={(e) => {
+                  try {
+                    e.currentTarget.showPicker?.();
+                  } catch (err) {}
+                }}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500 cursor-pointer"
               />
             </div>
-          <div>
+
+            <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                เวลาเริ่มนัดหมาย:
+                เวลาเริ่มนัดหมาย (เวลาไทย):
               </label>
-              <input
-                type="time"
+              <select
                 required
                 value={startTime}
-                min={
-                  date === new Date().toLocaleDateString('en-CA')
-                    ? new Date().toTimeString().slice(0, 5)
-                    : undefined
-                }
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
-      />
-    </div>
-  </div>
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500 cursor-pointer"
+              >
+                <option value="">เลือกเวลาเริ่มงาน</option>
+                {Array.from({ length: 48 }).map((_, i) => {
+                  const hour = String(Math.floor(i / 2)).padStart(2, '0');
+                  const minute = i % 2 === 0 ? '00' : '30';
+                  const timeVal = `${hour}:${minute}`;
+                  return (
+                    <option key={timeVal} value={timeVal} className="bg-slate-900 text-white">
+                      {timeVal} น.
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
 
         {/* Duration with Progressive Discounts */}
           <div>
