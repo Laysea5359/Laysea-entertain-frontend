@@ -212,29 +212,29 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const bookingId = 'BOOK-' + Math.floor(100000 + Math.random() * 900000);
       const remainingCredits = availableCredits - requiredCredits;
 
-      const newBookingData = {
-        id: bookingId,
-        bookingId: bookingId,
-        partnerId: partner.id,
-        partnerName: partner.nickname || partner.name || 'พาร์ทเนอร์ Laysea',
-        partnerPhone: partner.phone || '',
-        eventType,
-        location,
-        date,
-        startTime,
-        durationHours: Number(durationHours),
-        totalCredits: requiredCredits,
-        totalAmountBaht: requiredCredits,
-        clientId: userSession?.id || userSession?.uid || '',
-        clientName: userSession?.name || userSession?.displayName || 'ลูกค้าทั่วไป',
-        clientPhone: userSession?.phone || userSession?.phoneNumber || '',
-        status: 'pending', // ให้เป็นสถานะรอพาร์ทเนอร์กดรับงาน
-        escrowStatus: 'held',
-        meetupStatus: 'pending',
-        lat: locationCoords?.lat || null,
-        lng: locationCoords?.lng || null,
-        createdAt: new Date().toISOString()
-      };
+     const newBookingData = {
+          id: bookingId,
+          bookingId: bookingId,
+          partnerId: partner.id,
+          partnerName: partner.nickname || partner.name || 'พาร์ทเนอร์ Laysea',
+          location: location,
+          locationCoords: locationCoords || tempCoords,
+          eventType: eventType,
+          date,
+          startTime,
+          durationHours: Number(durationHours),
+          totalCredits: requiredCredits,
+          totalAmountBaht: requiredCredits,
+          clientId: userSession?.id || userSession?.uid || '',
+          clientName: userSession?.name || userSession?.displayName || 'ลูกค้าทั่วไป',
+          clientPhone: userSession?.phone || userSession?.phoneNumber || '',
+          status: 'pending',
+          escrowStatus: 'held',
+          meetupStatus: 'pending',
+          lat: (locationCoords || tempCoords)?.lat || null,
+          lng: (locationCoords || tempCoords)?.lng || null,
+          createdAt: new Date().toISOString()
+        };
 
       // 1. บันทึกงานนัดหมายเข้าคอลเลกชัน bookings ใน Cloud Firestore ทันที
       await setDoc(doc(db, 'bookings', bookingId), newBookingData, { merge: true });

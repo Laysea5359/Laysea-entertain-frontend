@@ -135,11 +135,7 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
         {/* ปุ่มลัดเปิด Google Maps นำทางจริงไปยังจุดนัดพบทันที */}
         <div className="px-1 pb-2">
           <a
-            href={
-              (booking as any)?.locationCoords
-                ? `https://www.google.com/maps/dir/?api=1&destination=${clientLat},${clientLng}`
-                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking?.location || 'จุดนัดพบ')}`
-            }
+            href={`https://www.google.com/maps/search/?api=1&query=${clientLat},${clientLng}`}
             target="_blank"
             rel="noreferrer"
             className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 active:scale-[0.98] text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-950/50 flex items-center justify-center gap-2 transition-all cursor-pointer no-underline"
