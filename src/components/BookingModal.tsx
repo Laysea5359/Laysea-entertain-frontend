@@ -406,7 +406,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             <p className="text-[10px] text-slate-500">
               * ข้อมูลที่อยู่ละเอียดจะถูกซ่อนเพื่อความปลอดภัย จนกว่าพาร์ทเนอร์จะกดยืนยันรับงาน
             </p>
-          </div>
 
           {/* Date & Time */}
           <div className="grid grid-cols-2 gap-3">
