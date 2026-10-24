@@ -51,7 +51,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [isLocating, setIsLocating] = useState(false);
 
-  // ดึงตำแหน่งสดของลูกค้า + Reverse Geocoding เป็นชื่อสถานที่ใกล้เคียง
+  // ดึงตำแหน่งสดของลูกค้า + เช็กความแม่นยำ GPS (ป้องกันพิกัดชุมสายเน็ต PC เพี้ยน)
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       alert('อุปกรณ์ของคุณไม่รองรับการระบุตำแหน่ง GPS');
@@ -62,7 +62,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy; // รัศมีความคลาดเคลื่อน (เมตร)
+
         setLocationCoords({ lat, lng });
+
+        // ถ้าค่า accuracy กว้างเกิน 2,000 เมตร แสดงว่าเป็นเน็ตบ้าน/คอมพิวเตอร์ ไม่ใช่ GPS มือถือจริง
+        const isFromPC = accuracy > 2000;
 
         try {
           const res = await fetch(
@@ -70,18 +75,28 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             { headers: { 'Accept-Language': 'th' } }
           );
           const data = await res.json();
-          const placeName = data.display_name?.split(',').slice(0, 3).join(', ') || `พิกัดใกล้ฉัน (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-          setLocation(placeName);
+          const placeName =
+            data.display_name?.split(',').slice(0, 3).join(', ') ||
+            `พิกัดใกล้ฉัน (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+
+          if (isFromPC) {
+            setLocation(placeName);
+            alert(
+              '⚠️ ตรวจพบการใช้งานบนคอมพิวเตอร์/เน็ตบ้าน พิกัดอาจอิงตามชุมสายอินเทอร์เน็ต (หากไม่ตรง ท่านสามารถพิมพ์ระบุชื่อร้าน/สถานที่จริงในช่องได้เลยครับ)'
+            );
+          } else {
+            setLocation(placeName);
+          }
         } catch {
-          setLocation(`ตำแหน่งปัจจุบันของฉัน (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+          setLocation(`ตำแหน่งปัจจุบัน (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
         }
         setIsLocating(false);
       },
       (err) => {
         setIsLocating(false);
-        alert('กรุณาเปิดสิทธิ์เข้าถึงตำแหน่ง (GPS) ในเบราว์เซอร์');
+        alert('กรุณาเปิดสิทธิ์เข้าถึงตำแหน่ง (Location / GPS) ในเบราว์เซอร์');
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // maximumAge: 0 บังคับดึงพิกัดสดใหม่ ไม่ใช้ค่าแคชเก่า
     );
   };
 
