@@ -150,11 +150,13 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
           </a>
         </div>
 
-          {/* Safety Beacon Badge */}
-          <div className="absolute bottom-2 right-2 bg-slate-950/90 backdrop-blur-md border border-emerald-500/40 rounded-xl px-2.5 py-1 text-[9px] text-emerald-300 flex items-center gap-1.5 z-30">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+        {/* Safety Badge */}
+        <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-950/80 border border-slate-800 text-[10px] text-emerald-400">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" />
             <span>เชื่อมต่อศูนย์พิทักษ์ความปลอดภัย Laysea</span>
           </div>
+          <span className="text-slate-500 font-mono">Live GPS</span>
         </div>
 
         {/* Meetup Details & Continuous Protection */}
