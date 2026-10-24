@@ -609,9 +609,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
           <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl flex flex-col gap-3">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                📍 ปักหมุดเลือกสถานที่นัดพบ
-              </h4>
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  📍 จิ้มเลือกตำแหน่งนัดพบบนแผนที่
+                </h4>
+                <p className="text-[11px] text-slate-400">แตะหรือคลิกจุดที่ต้องการบนแผนที่เพื่อย้ายหมุด</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowMapPicker(false)}
@@ -621,39 +624,67 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </button>
             </div>
 
-            {/* พรีวิวตำแหน่งแผนที่ OpenStreetMap Embed ตามพิกัดที่เลือก */}
-            <div className="relative w-full h-64 rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
+            {/* แผนที่แบบ Interactive จิ้มปักหมุดได้จริง */}
+            <div className="relative w-full h-72 rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
               <iframe
-                title="Map Picker"
+                title="Interactive Map Picker"
                 width="100%"
                 height="100%"
                 frameBorder="0"
-                scrolling="no"
-                src={`https://www.openstreetmap.org/export/embed.html?bbox=${tempCoords.lng - 0.01}%2C${tempCoords.lat - 0.01}%2C${tempCoords.lng + 0.01}%2C${tempCoords.lat + 0.01}&layer=mapnik&marker=${tempCoords.lat}%2C${tempCoords.lng}`}
+                srcDoc={`
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                    <meta charset="utf-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                    <style>
+                      body, html, #map { margin: 0; padding: 0; height: 100%; width: 100%; }
+                    </style>
+                  </head>
+                  <body>
+                    <div id="map"></div>
+                    <script>
+                      const map = L.map('map').setView([${tempCoords.lat}, ${tempCoords.lng}], 15);
+                      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap'
+                      }).addTo(map);
+
+                      let marker = L.marker([${tempCoords.lat}, ${tempCoords.lng}], { draggable: true }).addTo(map);
+
+                      function updatePos(lat, lng) {
+                        window.parent.postMessage({ type: 'PIN_LOCATION', lat: lat, lng: lng }, '*');
+                      }
+
+                      // เมื่อคลิกบนแผนที่ ให้ย้ายหมุดมาตรงที่คลิกทันที
+                      map.on('click', function(e) {
+                        marker.setLatLng(e.latlng);
+                        updatePos(e.latlng.lat, e.latlng.lng);
+                      });
+
+                      // เมื่อลากหมุดปล่อย
+                      marker.on('dragend', function(e) {
+                        const pos = marker.getLatLng();
+                        updatePos(pos.lat, pos.lng);
+                      });
+                    </script>
+                  </body>
+                  </html>
+                `}
                 className="w-full h-full"
               />
             </div>
 
             {/* แสดงชื่อสถานที่และพิกัด */}
             <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex flex-col gap-1">
-              <div className="text-[11px] text-slate-400">สถานที่ที่เลือกในขณะนี้:</div>
+              <div className="text-[11px] text-slate-400">ตำแหน่งที่ปักหมุด:</div>
               <div className="text-xs font-semibold text-rose-300 truncate">
-                {isResolvingAddress ? 'กำลังดึงชื่อสถานที่...' : tempPlaceName || location || 'ยังไม่ได้ระบุชื่อสถานที่'}
+                {isResolvingAddress ? 'กำลังค้นหาชื่อสถานที่...' : tempPlaceName || location || 'กรุณาแตะบนแผนที่เพื่อเลือกหมุด'}
               </div>
               <div className="text-[10px] text-emerald-400 font-mono">
                 พิกัด: {tempCoords.lat.toFixed(5)}, {tempCoords.lng.toFixed(5)}
               </div>
-            </div>
-
-            <div className="flex items-center justify-between text-[11px]">
-              <a
-                href={`https://www.google.com/maps?q=${tempCoords.lat},${tempCoords.lng}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sky-400 hover:underline"
-              >
-                เปิดตรวจดูใน Google Maps เต็มจอ ↗
-              </a>
             </div>
 
             {/* ปุ่มกดยืนยันตามสถานที่นี้ */}
