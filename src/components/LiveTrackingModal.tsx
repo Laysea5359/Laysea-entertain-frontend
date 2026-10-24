@@ -39,9 +39,9 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
   const [partnerLat, setPartnerLat] = useState(13.7432);
   const [partnerLng, setPartnerLng] = useState(100.5389);
 
-  // Client position: Siam Kempinski / Siam Paragon
-  const clientLat = 13.7468;
-  const clientLng = 100.5350;
+  // ใช้พิกัดจริงที่ลูกค้าจองไว้ (ถ้าไม่มี ค่อยใช้พิกัดเริ่มต้นบางแสน)
+  const clientLat = (booking as any)?.locationCoords?.lat || 13.2849;
+  const clientLng = (booking as any)?.locationCoords?.lng || 100.9151;
 
   // Simulate live movement
   useEffect(() => {
@@ -119,71 +119,36 @@ export const LiveTrackingModal: React.FC<LiveTrackingModalProps> = ({
           </div>
         </div>
 
-        {/* Simulated High-tech Dark Interactive GPS Map */}
-        <div className="relative h-64 bg-slate-950 overflow-hidden border-b border-slate-800 flex items-center justify-center">
-          {/* Subtle Map Grid Background */}
-          <div
-            className="absolute inset-0 opacity-20"
-            style={{
-              backgroundImage: `radial-gradient(#475569 1px, transparent 1px), radial-gradient(#334155 1px, transparent 1px)`,
-              backgroundSize: '24px 24px',
-              backgroundPosition: '0 0, 12px 12px',
-            }}
-          ></div>
+          {/* แผนที่ตำแหน่งจริง OpenStreetMap */}
+        <div className="relative w-full h-56 rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 my-2 shadow-inner">
+          <iframe
+            title="Live Location Map"
+            width="100%"
+            height="100%"
+            frameBorder="0"
+            scrolling="no"
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${clientLng - 0.008}%2C${clientLat - 0.006}%2C${clientLng + 0.008}%2C${clientLat + 0.006}&layer=mapnik&marker=${clientLat}%2C${clientLng}`}
+            className="w-full h-full"
+          />
+        </div>
 
-          {/* Road Network Lines Simulation */}
-          <svg className="absolute inset-0 w-full h-full stroke-slate-800" strokeWidth="3">
-            <path d="M 40 220 Q 180 180 210 110 T 360 40" fill="none" />
-            <path d="M 210 110 L 160 30" fill="none" strokeWidth="2" strokeDasharray="4 4" />
-            <path d="M 40 100 L 380 140" fill="none" strokeWidth="2" />
-          </svg>
-
-          {/* Connecting Path Line between Client and Partner */}
-          <svg className="absolute inset-0 w-full h-full stroke-rose-500/70" strokeWidth="2.5" strokeDasharray="6 4">
-            <line x1="260" y1="90" x2="130" y2="180" className="animate-pulse" />
-          </svg>
-
-          {/* Radar Waves Animation from Venue */}
-          <div className="absolute top-[85px] left-[255px] -translate-x-1/2 -translate-y-1/2">
-            <div className="w-20 h-20 rounded-full border border-rose-500/30 animate-ping"></div>
-          </div>
-
-          {/* 1. Client Marker Pin */}
-          <div className="absolute top-20 right-20 flex flex-col items-center z-20">
-            <div className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold text-[9px] shadow-lg mb-1 flex items-center gap-1 border border-rose-400">
-              <User className="w-2.5 h-2.5" />
-              <span>{currentUserRole === 'client' ? 'ตำแหน่งคุณ (ลูกค้า)' : 'จุดนัดพบลูกค้า'}</span>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-rose-600 border-2 border-white shadow-xl flex items-center justify-center text-white">
-              <MapPin className="w-4 h-4" />
-            </div>
-            <span className="text-[8px] font-mono text-slate-400 mt-0.5">Siam Kempinski</span>
-          </div>
-
-          {/* 2. Partner Live GPS Moving Pin */}
-          <div className="absolute bottom-16 left-24 flex flex-col items-center z-20">
-            <div className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[9px] shadow-lg mb-1 flex items-center gap-1 border border-emerald-400 animate-bounce">
-              <Car className="w-2.5 h-2.5" />
-              <span>{currentUserRole === 'partner' ? 'ตำแหน่งคุณ (พาร์ทเนอร์)' : `${booking.partnerName}`}</span>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-emerald-500 border-2 border-white shadow-xl flex items-center justify-center text-white relative">
-              <Navigation className="w-4 h-4" />
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 border border-slate-950 rounded-full animate-ping"></span>
-            </div>
-            <span className="text-[8px] font-mono text-slate-400 mt-0.5">กำลังเคลื่อนที่ (~35 กม./ชม.)</span>
-          </div>
-
-          {/* Live Floating Metrics Widget */}
-          <div className="absolute top-2 left-2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl p-2 text-[10px] space-y-0.5 z-30">
-            <div className="flex items-center gap-1 text-slate-400">
-              <Compass className="w-3 h-3 text-emerald-400" />
-              <span>ระยะห่าง: <strong className="text-white">{partnerDistance} กม.</strong></span>
-            </div>
-            <div className="flex items-center gap-1 text-slate-400">
-              <Clock className="w-3 h-3 text-amber-400" />
-              <span>ประมาณการ: <strong className="text-white">{eta} นาที</strong></span>
-            </div>
-          </div>
+        {/* ปุ่มลัดเปิด Google Maps นำทางจริงไปยังจุดนัดพบทันที */}
+        <div className="px-1 pb-2">
+          <a
+            href={
+              (booking as any)?.locationCoords
+                ? `https://www.google.com/maps/dir/?api=1&destination=${clientLat},${clientLng}`
+                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking?.location || 'จุดนัดพบ')}`
+            }
+            target="_blank"
+            rel="noreferrer"
+            className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 active:scale-[0.98] text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-950/50 flex items-center justify-center gap-2 transition-all cursor-pointer no-underline"
+          >
+            <span>🧭</span>
+            <span>เปิด Google Maps นำทางไปยัง {booking?.location || 'จุดนัดพบ'}</span>
+            <span>↗</span>
+          </a>
+        </div>
 
           {/* Safety Beacon Badge */}
           <div className="absolute bottom-2 right-2 bg-slate-950/90 backdrop-blur-md border border-emerald-500/40 rounded-xl px-2.5 py-1 text-[9px] text-emerald-300 flex items-center gap-1.5 z-30">
