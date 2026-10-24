@@ -447,7 +447,7 @@ const handleReportNoShow = async (bookingId: string) => {
             <button
               type="button"
               onClick={() => onOpenLiveTracking(booking)}
-              className="w-full py-2 bg-slate-800/90 hover:bg-slate-750 text-teal-350 border border-teal-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer mb-2"
+              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 cursor-pointer mb-2"
             >
               <Navigation className="w-3.5 h-3.5 animate-spin text-teal-400" />
               <span>📍 ดูพิกัดนัดพบ & แผนที่สด (Live GPS Tracking)</span>
