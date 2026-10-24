@@ -47,11 +47,38 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [eventType, setEventType] = useState('ดูแลในวงสังสรรค์ / ปาร์ตี้');
   const [location, setLocation] = useState('');
 
-  // 2. ตัวแปรพิกัดและฟังก์ชันดึงตำแหน่งที่เพิ่งวาง (ถูกต้องแล้ว)
+  // 1. พิกัดตำแหน่งที่เลือก
   const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [isLocating, setIsLocating] = useState(false);
 
-  // ดึงตำแหน่งสดของลูกค้า + เช็กความแม่นยำ GPS (ป้องกันพิกัดชุมสายเน็ต PC เพี้ยน)
+// 2. State สำหรับหน้าต่างปักหมุดแผนที่
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [tempCoords, setTempCoords] = useState<{ lat: number; lng: number }>({
+    lat: 13.2849, // พิกัดเริ่มต้นบางแสน
+    lng: 100.9151,
+  });
+  const [tempPlaceName, setTempPlaceName] = useState('');
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+
+  // ฟังก์ชันแปลงพิกัดที่คลิกบนแผนที่เป็นชื่อสถานที่
+  const handleSelectCoordsFromMap = async (lat: number, lng: number) => {
+    setTempCoords({ lat, lng });
+    setIsResolvingAddress(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        { headers: { 'Accept-Language': 'th' } }
+      );
+      const data = await res.json();
+      const name = data.display_name?.split(',').slice(0, 3).join(', ') || `พิกัด (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+      setTempPlaceName(name);
+    } catch {
+      setTempPlaceName(`พิกัด (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    }
+    setIsResolvingAddress(false);
+  };
+
+  // 3. ฟังก์ชันดึงตำแหน่งปัจจุบัน
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       alert('อุปกรณ์ของคุณไม่รองรับการระบุตำแหน่ง GPS');
@@ -62,11 +89,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        const accuracy = pos.coords.accuracy; // รัศมีความคลาดเคลื่อน (เมตร)
+        const accuracy = pos.coords.accuracy;
 
         setLocationCoords({ lat, lng });
 
-        // ถ้าค่า accuracy กว้างเกิน 2,000 เมตร แสดงว่าเป็นเน็ตบ้าน/คอมพิวเตอร์ ไม่ใช่ GPS มือถือจริง
         const isFromPC = accuracy > 2000;
 
         try {
@@ -96,7 +122,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         setIsLocating(false);
         alert('กรุณาเปิดสิทธิ์เข้าถึงตำแหน่ง (Location / GPS) ในเบราว์เซอร์');
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // maximumAge: 0 บังคับดึงพิกัดสดใหม่ ไม่ใช้ค่าแคชเก่า
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
@@ -324,26 +350,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           </div>
 
           {/* Location */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between">
               <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400" />
                 <span>สถานที่นัดพบ (ร้านอาหาร / คาเฟ่ / โรงแรม):</span>
               </label>
-              {location && (
-                <a
-                  href={
-                    locationCoords
-                      ? `https://www.google.com/maps?q=${locationCoords.lat},${locationCoords.lng}`
-                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`
+
+              {/* ปุ่มเปิดหน้าต่างเลือกหมุดบนแผนที่ */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (locationCoords) {
+                    setTempCoords(locationCoords);
+                    setTempPlaceName(location);
                   }
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-sky-400 hover:text-sky-300 underline inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>ตรวจหมุดบน Google Maps ↗</span>
-                </a>
-              )}
+                  setShowMapPicker(true);
+                }}
+                className="text-[11px] text-sky-400 hover:text-sky-300 underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                🗺️ จิ้มปักหมุดบนแผนที่ / ตรวจตำแหน่ง
+              </button>
             </div>
 
             {/* ช่องพิมพ์ระบุสถานที่ */}
@@ -578,6 +604,84 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             )}
           </div>
         </form>
+
+         {/* Modal ปักหมุดเลือกสถานที่บนแผนที่ */}
+      {showMapPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl flex flex-col gap-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                📍 ปักหมุดเลือกสถานที่นัดพบ
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(false)}
+                className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded-lg hover:bg-slate-800 cursor-pointer"
+              >
+                ✕ ปิด
+              </button>
+            </div>
+
+            {/* พรีวิวตำแหน่งแผนที่ OpenStreetMap Embed ตามพิกัดที่เลือก */}
+            <div className="relative w-full h-64 rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
+              <iframe
+                title="Map Picker"
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                scrolling="no"
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=${tempCoords.lng - 0.01}%2C${tempCoords.lat - 0.01}%2C${tempCoords.lng + 0.01}%2C${tempCoords.lat + 0.01}&layer=mapnik&marker=${tempCoords.lat}%2C${tempCoords.lng}`}
+                className="w-full h-full"
+              />
+            </div>
+
+            {/* แสดงชื่อสถานที่และพิกัด */}
+            <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex flex-col gap-1">
+              <div className="text-[11px] text-slate-400">สถานที่ที่เลือกในขณะนี้:</div>
+              <div className="text-xs font-semibold text-rose-300 truncate">
+                {isResolvingAddress ? 'กำลังดึงชื่อสถานที่...' : tempPlaceName || location || 'ยังไม่ได้ระบุชื่อสถานที่'}
+              </div>
+              <div className="text-[10px] text-emerald-400 font-mono">
+                พิกัด: {tempCoords.lat.toFixed(5)}, {tempCoords.lng.toFixed(5)}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px]">
+              <a
+                href={`https://www.google.com/maps?q=${tempCoords.lat},${tempCoords.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sky-400 hover:underline"
+              >
+                เปิดตรวจดูใน Google Maps เต็มจอ ↗
+              </a>
+            </div>
+
+            {/* ปุ่มกดยืนยันตามสถานที่นี้ */}
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(false)}
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl transition-all cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLocationCoords(tempCoords);
+                  if (tempPlaceName) setLocation(tempPlaceName);
+                  setShowMapPicker(false);
+                }}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/50 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                ✓ ยืนยันตามสถานที่นี้
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );
